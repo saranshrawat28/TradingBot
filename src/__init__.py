@@ -1,0 +1,3 @@
+"""
+TradingBot root source package.
+"""
