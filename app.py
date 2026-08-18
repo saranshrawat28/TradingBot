@@ -55,280 +55,255 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Inject Google Fonts & Two-Tier Institutional CSS Design Tokens
+# Inject Google Fonts & Institutional Terminal CSS Design Tokens
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap');
 
     :root {
-        /* Base Backgrounds */
+        /* Base Flat Surfaces (Zero gradients, zero glow) */
         --bg-obsidian: #080b11;
-        --bg-card-solid: #111622;
-        --bg-card-elevated: #161d2d;
-        --bg-chrome-glass: rgba(17, 24, 39, 0.75);
+        --bg-surface: #111622;
+        --bg-surface-elevated: #182030;
         
-        /* High-Contrast Operational Borders */
+        /* Subtle 1px Institutional Borders */
         --border-subtle: #1e293b;
         --border-prominent: #334155;
-        --border-glass: rgba(255, 255, 255, 0.08);
         
-        /* High-Contrast Colors (WCAG 2.1 AA Compliant) */
+        /* High-Contrast Typography */
         --text-primary: #f8fafc;
         --text-secondary: #94a3b8;
         --text-muted: #64748b;
         
-        /* Accessible Status Cues */
+        /* Accessible Financial Indicators */
         --color-bullish: #10b981;
-        --color-bullish-bg: rgba(16, 185, 129, 0.12);
+        --color-bullish-bg: rgba(16, 185, 129, 0.10);
+        --color-bullish-border: rgba(16, 185, 129, 0.35);
+        
         --color-bearish: #f43f5e;
-        --color-bearish-bg: rgba(244, 63, 94, 0.12);
+        --color-bearish-bg: rgba(244, 63, 94, 0.10);
+        --color-bearish-border: rgba(244, 63, 94, 0.35);
+        
         --color-neutral: #f59e0b;
-        --color-neutral-bg: rgba(245, 158, 11, 0.12);
-        --color-cyan: #0ea5e9;
-        --color-cyan-bg: rgba(14, 165, 233, 0.12);
-        --color-indigo: #6366f1;
-        --color-indigo-bg: rgba(99, 102, 241, 0.12);
+        --color-neutral-bg: rgba(245, 158, 11, 0.10);
+        --color-neutral-border: rgba(245, 158, 11, 0.35);
+        
+        --color-sky: #0ea5e9;
+        --color-sky-bg: rgba(14, 165, 233, 0.10);
+        --color-sky-border: rgba(14, 165, 233, 0.35);
     }
 
     /* Core Terminal Canvas */
     .stApp {
-        background-color: var(--bg-obsidian);
-        color: var(--text-primary);
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        background-color: var(--bg-obsidian) !important;
+        color: var(--text-primary) !important;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
     }
 
-    /* Monospace Text Utility */
-    .mono-num {
+    /* Tabular Monospace for All Numerical Telemetry */
+    .tnum, .mono-num, [data-testid="stMetricValue"], [data-testid="stMetricDelta"] {
         font-family: 'JetBrains Mono', monospace !important;
-        font-feature-settings: "tnum" 1;
-        letter-spacing: -0.02em;
+        font-feature-settings: "tnum" 1 !important;
+        font-variant-numeric: tabular-nums !important;
+        letter-spacing: -0.02em !important;
     }
 
-    /* Brand Headings */
-    h1, h2, h3, .brand-font {
-        font-family: 'Outfit', 'Inter', sans-serif !important;
-        letter-spacing: -0.01em;
+    /* Section Headings */
+    h1, h2, h3, .brand-title {
+        font-family: 'Outfit', sans-serif !important;
+        letter-spacing: -0.02em !important;
+        color: var(--text-primary) !important;
     }
 
-    /* High-Contrast Operational Metric Cards */
+    /* Flat High-Contrast Metric Cards (Zero blur / zero gradient) */
     div[data-testid="stMetric"] {
-        background: var(--bg-card-solid);
-        border: 1px solid var(--border-subtle);
-        border-radius: 10px;
-        padding: 12px 16px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.35);
-        transition: border-color 0.15s ease;
-        min-height: 84px;
-        box-sizing: border-box;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
+        background: var(--bg-surface) !important;
+        border: 1px solid var(--border-subtle) !important;
+        border-radius: 8px !important;
+        padding: 10px 14px !important;
+        box-shadow: none !important;
+        min-height: 82px !important;
+        box-sizing: border-box !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: space-between !important;
     }
     div[data-testid="stMetric"]:hover {
-        border-color: var(--border-prominent);
+        border-color: var(--border-prominent) !important;
     }
     div[data-testid="stMetricLabel"] {
-        font-size: 0.76rem !important;
+        font-size: 0.72rem !important;
         color: var(--text-secondary) !important;
-        font-weight: 600 !important;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
+        font-weight: 700 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
         margin-bottom: 2px !important;
     }
     div[data-testid="stMetricValue"] {
-        font-size: 1.35rem !important;
+        font-size: 1.30rem !important;
         color: var(--text-primary) !important;
         font-weight: 700 !important;
-        font-family: 'JetBrains Mono', monospace !important;
         line-height: 1.2 !important;
     }
-    div[data-testid="stMetricDelta"] {
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.82rem !important;
-        font-weight: 700 !important;
-        margin-top: 2px !important;
-    }
-    div[data-testid="stMetricDelta"] svg[data-testid="stMetricDeltaIcon-down"] {
-        fill: #f43f5e !important;
-        color: #f43f5e !important;
-    }
-    div[data-testid="stMetricDelta"] svg[data-testid="stMetricDeltaIcon-up"] {
-        fill: #10b981 !important;
-        color: #10b981 !important;
-    }
-    div[data-testid="stMetricDelta"]:has(svg[data-testid="stMetricDeltaIcon-down"]) div,
-    div[data-testid="stMetricDelta"]:has(svg[data-testid="stMetricDeltaIcon-down"]) span {
-        color: #f43f5e !important;
-    }
-    div[data-testid="stMetricDelta"]:has(svg[data-testid="stMetricDeltaIcon-up"]) div,
-    div[data-testid="stMetricDelta"]:has(svg[data-testid="stMetricDeltaIcon-up"]) span {
-        color: #10b981 !important;
-    }
-    .text-negative, .text-bear {
-        color: #f43f5e !important;
-        font-weight: 700 !important;
-    }
-    .text-positive, .text-bull {
-        color: #10b981 !important;
-        font-weight: 700 !important;
-    }
 
-    /* Dynamic Price & Index Highlighting Cards */
-    .price-card-bear {
-        background: rgba(244, 63, 94, 0.08) !important;
-        border: 1px solid rgba(244, 63, 94, 0.35) !important;
-        border-radius: 10px;
+    /* Flat Equal-Height Ticker Cards */
+    .ticker-card-bull {
+        background: var(--color-bullish-bg) !important;
+        border: 1px solid var(--color-bullish-border) !important;
+        border-radius: 8px;
         padding: 10px 14px;
-        min-height: 84px;
+        min-height: 82px;
         box-sizing: border-box;
         display: flex;
         flex-direction: column;
         justify-content: center;
-        transition: all 0.2s ease;
     }
-    .price-card-bull {
-        background: rgba(16, 185, 129, 0.08) !important;
-        border: 1px solid rgba(16, 185, 129, 0.35) !important;
-        border-radius: 10px;
+    .ticker-card-bear {
+        background: var(--color-bearish-bg) !important;
+        border: 1px solid var(--color-bearish-border) !important;
+        border-radius: 8px;
         padding: 10px 14px;
-        min-height: 84px;
+        min-height: 82px;
         box-sizing: border-box;
         display: flex;
         flex-direction: column;
         justify-content: center;
-        transition: all 0.2s ease;
     }
-    .price-text-bear {
-        color: #f43f5e !important;
-        font-weight: 800 !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 1.25rem !important;
-        letter-spacing: -0.02em;
-    }
-    .price-text-bull {
-        color: #10b981 !important;
-        font-weight: 800 !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 1.25rem !important;
-        letter-spacing: -0.02em;
+    .ticker-card-neutral {
+        background: var(--bg-surface) !important;
+        border: 1px solid var(--border-subtle) !important;
+        border-radius: 8px;
+        padding: 10px 14px;
+        min-height: 82px;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
     }
 
-    /* Decorative Frosted Chrome Panels */
-    .chrome-card {
-        background: var(--bg-chrome-glass);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        border: 1px solid var(--border-glass);
-        border-radius: 12px;
-        padding: 16px 20px;
-        margin-bottom: 14px;
-        box-sizing: border-box;
+    .ticker-val-bull {
+        color: var(--color-bullish) !important;
+        font-family: 'JetBrains Mono', monospace !important;
+        font-feature-settings: "tnum" 1 !important;
+        font-size: 1.22rem !important;
+        font-weight: 800 !important;
+    }
+    .ticker-val-bear {
+        color: var(--color-bearish) !important;
+        font-family: 'JetBrains Mono', monospace !important;
+        font-feature-settings: "tnum" 1 !important;
+        font-size: 1.22rem !important;
+        font-weight: 800 !important;
     }
 
     /* Solid Operational Cards */
     .op-card {
-        background: var(--bg-card-solid);
+        background: var(--bg-surface);
         border: 1px solid var(--border-subtle);
-        border-radius: 10px;
-        padding: 12px 16px;
-        min-height: 84px;
+        border-radius: 8px;
+        padding: 10px 14px;
+        min-height: 82px;
         box-sizing: border-box;
         display: flex;
         flex-direction: column;
         justify-content: center;
     }
 
-    /* Color-Blind Accessible Badges */
+    /* Accessibility Badges (Always paired with symbol/text) */
     .badge-bull {
         background-color: var(--color-bullish-bg);
         color: var(--color-bullish);
-        border: 1px solid var(--color-bullish);
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-size: 0.8rem;
+        border: 1px solid var(--color-bullish-border);
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.76rem;
         font-weight: 700;
         font-family: 'JetBrains Mono', monospace;
+        font-feature-settings: "tnum" 1;
     }
     .badge-bear {
         background-color: var(--color-bearish-bg);
         color: var(--color-bearish);
-        border: 1px solid var(--color-bearish);
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-size: 0.8rem;
+        border: 1px solid var(--color-bearish-border);
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.76rem;
         font-weight: 700;
         font-family: 'JetBrains Mono', monospace;
+        font-feature-settings: "tnum" 1;
     }
     .badge-neutral {
         background-color: var(--color-neutral-bg);
         color: var(--color-neutral);
-        border: 1px solid var(--color-neutral);
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-size: 0.8rem;
+        border: 1px solid var(--color-neutral-border);
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.76rem;
         font-weight: 700;
         font-family: 'JetBrains Mono', monospace;
+        font-feature-settings: "tnum" 1;
     }
-    .badge-cyan {
-        background-color: var(--color-cyan-bg);
-        color: var(--color-cyan);
-        border: 1px solid var(--color-cyan);
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-size: 0.8rem;
+    .badge-sky {
+        background-color: var(--color-sky-bg);
+        color: var(--color-sky);
+        border: 1px solid var(--color-sky-border);
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.76rem;
         font-weight: 700;
         font-family: 'JetBrains Mono', monospace;
+        font-feature-settings: "tnum" 1;
     }
 
-    /* Slow Ambient Breathing Fade (2.5s calm pulse) */
-    @keyframes ambient-breath {
-        0%, 100% { opacity: 0.9; }
-        50% { opacity: 0.45; }
+    /* Slow Ambient Attention Indicator (1.8s calm fade for urgent state only) */
+    @keyframes urgent-attention {
+        0%, 100% { opacity: 0.95; }
+        50% { opacity: 0.35; }
     }
-    .ambient-dot-green {
+    .dot-live-open {
         display: inline-block;
-        width: 9px;
-        height: 9px;
+        width: 8px;
+        height: 8px;
         background-color: var(--color-bullish);
         border-radius: 50%;
-        margin-right: 6px;
-        animation: ambient-breath 2.5s infinite ease-in-out;
+        margin-right: 5px;
     }
-    .ambient-dot-red {
+    .dot-urgent-attention {
         display: inline-block;
-        width: 9px;
-        height: 9px;
+        width: 8px;
+        height: 8px;
         background-color: var(--color-bearish);
         border-radius: 50%;
-        margin-right: 6px;
+        margin-right: 5px;
+        animation: urgent-attention 1.8s infinite ease-in-out;
     }
 
-    /* High-Visibility Emergency Kill Switch Box */
-    .kill-switch-box {
-        background: #20090d;
+    /* Solid Unmistakable Kill Switch Box */
+    .kill-switch-solid {
+        background: #18080a;
         border: 2px solid var(--color-bearish);
-        border-radius: 10px;
-        padding: 16px;
+        border-radius: 8px;
+        padding: 14px 18px;
         margin-top: 10px;
     }
 
-    /* Segmented Navigation / Tabs Styling */
+    /* Segmented Navigation Styling */
     .stTabs [data-baseweb="tab-list"] {
         gap: 6px;
-        background-color: var(--bg-card-solid);
+        background-color: var(--bg-surface);
         padding: 6px;
-        border-radius: 10px;
+        border-radius: 8px;
         border: 1px solid var(--border-subtle);
     }
     .stTabs [data-baseweb="tab"] {
-        height: 42px;
-        border-radius: 8px;
+        height: 40px;
+        border-radius: 6px;
         color: var(--text-secondary);
-        font-size: 0.88rem;
+        font-size: 0.86rem;
         font-weight: 600;
         border: none;
         background-color: transparent;
-        padding: 0 16px;
+        padding: 0 14px;
         transition: all 0.15s ease;
     }
     .stTabs [data-baseweb="tab"]:hover {
@@ -336,54 +311,23 @@ st.markdown("""
         background-color: rgba(255,255,255,0.04);
     }
     .stTabs [aria-selected="true"] {
-        background-color: var(--bg-card-elevated) !important;
+        background-color: var(--bg-surface-elevated) !important;
         color: var(--text-primary) !important;
         border: 1px solid var(--border-prominent) !important;
         font-weight: 700 !important;
     }
 
-    /* Buttons */
-    .stButton>button {
-        border-radius: 8px;
-        font-weight: 600;
-        font-size: 0.9rem;
-        transition: all 0.15s ease;
-        border: 1px solid var(--border-prominent);
-    }
-    .stButton>button:hover {
-        border-color: var(--text-secondary);
-    }
-
-    /* Inputs, Selectboxes, and Number Inputs */
-    div[data-baseweb="select"] > div, div[data-baseweb="input"] > div {
-        background-color: var(--bg-card-solid) !important;
-        border-color: var(--border-subtle) !important;
-        border-radius: 8px !important;
-        color: var(--text-primary) !important;
-    }
-    
-    /* Plain English Tip Box */
-    .tip-box {
-        background: rgba(14, 165, 233, 0.08);
-        border: 1px solid var(--color-cyan);
-        border-radius: 8px;
-        padding: 12px 16px;
-        margin-bottom: 15px;
-        font-size: 0.88rem;
-        line-height: 1.45;
-    }
-
     /* Custom Scrollbars */
     ::-webkit-scrollbar {
-        width: 7px;
-        height: 7px;
+        width: 6px;
+        height: 6px;
     }
     ::-webkit-scrollbar-track {
         background: var(--bg-obsidian);
     }
     ::-webkit-scrollbar-thumb {
         background: var(--border-prominent);
-        border-radius: 4px;
+        border-radius: 3px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -406,9 +350,9 @@ if "selected_stock_for_backtest" not in st.session_state:
 broker = get_broker(st.session_state.active_broker_name)
 
 # -------------------------------------------------------------
-# Top Header & Live Market Telemetry Bar (1s Ultra-Fast Live Stream Fragment)
+# Top Header & Live Market Telemetry Bar (2s Rate-Limited Fragment)
 # -------------------------------------------------------------
-@st.fragment(run_every=1)
+@st.fragment(run_every=2)
 def render_live_header_telemetry():
     broker = get_broker(st.session_state.active_broker_name)
     market_open, market_status_text = is_market_open()
@@ -416,93 +360,164 @@ def render_live_header_telemetry():
     
     nifty_quote = get_live_quote("^NSEI")
     banknifty_quote = get_live_quote("^NSEBANK")
+    sensex_quote = get_live_quote("^BSESN")
+    vix_quote = get_live_quote("^INDIAVIX")
     portfolio_data = broker.get_account_balance()
     
-    col_logo, col_nifty, col_banknifty, col_status = st.columns([2.6, 2.2, 2.2, 2.0])
+    c_brand, c_nifty, c_bn, c_sensex, c_vix, c_status = st.columns([2.2, 1.8, 1.8, 1.8, 1.4, 2.0])
     
-    with col_logo:
+    with c_brand:
         st.markdown(f"""
         <div class='op-card'>
-            <div style='font-size: 1.25rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif; display: flex; align-items: center; gap: 6px;'>
-                📈 ApexTrade <span style='font-size: 0.65rem; background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid #6366f1; padding: 2px 5px; border-radius: 4px; font-weight: 700;'>INSTITUTIONAL AI</span>
+            <div style='font-size: 1.15rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif;'>
+                📈 ApexTrade <span class='badge-sky' style='font-size: 0.65rem; padding: 1px 5px;'>INSTITUTIONAL</span>
             </div>
-            <div style='color: #94a3b8; font-size: 0.74rem; font-family: "JetBrains Mono", monospace; margin-top: 3px;'>
-                TIME: {ist_now}
+            <div style='color: #94a3b8; font-size: 0.72rem; font-family: "JetBrains Mono", monospace; font-feature-settings: "tnum" 1; margin-top: 3px;'>
+                {ist_now}
             </div>
         </div>
         """, unsafe_allow_html=True)
-    
-    with col_nifty:
-        nifty_price = nifty_quote.get("price", 24350.0)
-        nifty_chg = nifty_quote.get("change_pct", 0.0)
-        nifty_chg_pts = nifty_quote.get("change", 0.0)
-        n_card_cls = "price-card-bear" if nifty_chg < 0 else "price-card-bull"
-        n_text_cls = "price-text-bear" if nifty_chg < 0 else "price-text-bull"
-        n_badge_cls = "badge-bear" if nifty_chg < 0 else "badge-bull"
-        n_arrow = "▼ " if nifty_chg < 0 else "▲ +"
         
-        st.markdown(f"""
-        <div class='{n_card_cls}'>
-            <div style='font-size: 0.70rem; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;'>🇮🇳 NIFTY 50 INDEX</div>
-            <div style='display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-top: 2px;'>
-                <div class='{n_text_cls}'>₹{nifty_price:,.2f}</div>
-                <span class='{n_badge_cls}' style='font-size: 0.72rem; padding: 2px 6px; white-space: nowrap;'>{n_arrow}{nifty_chg:.2f}%</span>
+    with c_nifty:
+        p = float(nifty_quote.get("price", 0.0))
+        chg = float(nifty_quote.get("change_pct", 0.0))
+        if p > 0:
+            is_bull = chg >= 0
+            st.markdown(f"""
+            <div class='{'ticker-card-bull' if is_bull else 'ticker-card-bear'}'>
+                <div style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🇮🇳 NIFTY 50</div>
+                <div style='display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px;'>
+                    <span class='{'ticker-val-bull' if is_bull else 'ticker-val-bear'}'>₹{p:,.2f}</span>
+                    <span class='{'badge-bull' if is_bull else 'badge-bear'}'>{'▲ +' if is_bull else '▼ '}{chg:.2f}%</span>
+                </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col_banknifty:
-        bn_price = banknifty_quote.get("price", 51200.0)
-        bn_chg = banknifty_quote.get("change_pct", 0.0)
-        bn_chg_pts = banknifty_quote.get("change", 0.0)
-        bn_card_cls = "price-card-bear" if bn_chg < 0 else "price-card-bull"
-        bn_text_cls = "price-text-bear" if bn_chg < 0 else "price-text-bull"
-        bn_badge_cls = "badge-bear" if bn_chg < 0 else "badge-bull"
-        bn_arrow = "▼ " if bn_chg < 0 else "▲ +"
-        
-        st.markdown(f"""
-        <div class='{bn_card_cls}'>
-            <div style='font-size: 0.70rem; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;'>🏦 BANK NIFTY INDEX</div>
-            <div style='display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-top: 2px;'>
-                <div class='{bn_text_cls}'>₹{bn_price:,.2f}</div>
-                <span class='{bn_badge_cls}' style='font-size: 0.72rem; padding: 2px 6px; white-space: nowrap;'>{bn_arrow}{bn_chg:.2f}%</span>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class='ticker-card-neutral'>
+                <div style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🇮🇳 NIFTY 50</div>
+                <div style='display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px;'>
+                    <span class='tnum' style='color: #64748b; font-size: 1.15rem;'>₹---.--</span>
+                    <span class='badge-neutral' style='font-size: 0.68rem;'>OFFLINE</span>
+                </div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col_status:
-        status_dot = "ambient-dot-green" if market_open else "ambient-dot-red"
-        status_badge_class = "badge-bull" if market_open else "badge-bear"
+            """, unsafe_allow_html=True)
+
+    with c_bn:
+        p = float(banknifty_quote.get("price", 0.0))
+        chg = float(banknifty_quote.get("change_pct", 0.0))
+        if p > 0:
+            is_bull = chg >= 0
+            st.markdown(f"""
+            <div class='{'ticker-card-bull' if is_bull else 'ticker-card-bear'}'>
+                <div style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🏦 BANK NIFTY</div>
+                <div style='display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px;'>
+                    <span class='{'ticker-val-bull' if is_bull else 'ticker-val-bear'}'>₹{p:,.2f}</span>
+                    <span class='{'badge-bull' if is_bull else 'badge-bear'}'>{'▲ +' if is_bull else '▼ '}{chg:.2f}%</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class='ticker-card-neutral'>
+                <div style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🏦 BANK NIFTY</div>
+                <div style='display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px;'>
+                    <span class='tnum' style='color: #64748b; font-size: 1.15rem;'>₹---.--</span>
+                    <span class='badge-neutral' style='font-size: 0.68rem;'>OFFLINE</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    with c_sensex:
+        p = float(sensex_quote.get("price", 0.0))
+        chg = float(sensex_quote.get("change_pct", 0.0))
+        if p > 0:
+            is_bull = chg >= 0
+            st.markdown(f"""
+            <div class='{'ticker-card-bull' if is_bull else 'ticker-card-bear'}'>
+                <div style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🏛️ SENSEX</div>
+                <div style='display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px;'>
+                    <span class='{'ticker-val-bull' if is_bull else 'ticker-val-bear'}'>₹{p:,.2f}</span>
+                    <span class='{'badge-bull' if is_bull else 'badge-bear'}'>{'▲ +' if is_bull else '▼ '}{chg:.2f}%</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class='ticker-card-neutral'>
+                <div style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🏛️ SENSEX</div>
+                <div style='display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px;'>
+                    <span class='tnum' style='color: #64748b; font-size: 1.15rem;'>₹---.--</span>
+                    <span class='badge-neutral' style='font-size: 0.68rem;'>OFFLINE</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    with c_vix:
+        v = float(vix_quote.get("price", 0.0))
+        if v > 0:
+            if v < 15.0:
+                v_tag, v_badge = "LOW", "badge-sky"
+            elif v < 20.0:
+                v_tag, v_badge = "NORMAL", "badge-sky"
+            elif v < 25.0:
+                v_tag, v_badge = "ELEVATED", "badge-neutral"
+            else:
+                v_tag, v_badge = "EXTREME", "badge-bear"
+            st.markdown(f"""
+            <div class='ticker-card-neutral'>
+                <div style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>⚡ INDIA VIX</div>
+                <div style='display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px;'>
+                    <span class='tnum' style='font-size: 1.20rem; font-weight: 800; color: #f8fafc;'>{v:.2f}</span>
+                    <span class='{v_badge}' style='font-size: 0.68rem; padding: 1px 4px;'>{v_tag}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown("""
+            <div class='ticker-card-neutral'>
+                <div style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>⚡ INDIA VIX</div>
+                <div style='display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px;'>
+                    <span class='tnum' style='color: #64748b; font-size: 1.15rem;'>--.--</span>
+                    <span class='badge-neutral' style='font-size: 0.68rem;'>OFFLINE</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    with c_status:
+        st_dot = "dot-live-open" if market_open else "dot-urgent-attention"
+        st_badge = "badge-bull" if market_open else "badge-bear"
+        is_paper = "paper" in broker.name.lower()
         st.markdown(f"""
         <div class='op-card' style='align-items: flex-end;'>
-            <div><span class='{status_badge_class}' style='font-size: 0.74rem; padding: 2px 8px;'><span class='{status_dot}'></span>{market_status_text.upper()}</span></div>
-            <div style='color: #94a3b8; font-size: 0.74rem; margin-top: 4px;'>
-                Broker: <strong style='color: #38bdf8; font-family: "JetBrains Mono", monospace;'>{broker.name.upper()}</strong>
+            <div><span class='{st_badge}'><span class='{st_dot}'></span>{market_status_text.upper()}</span></div>
+            <div style='color: #94a3b8; font-size: 0.74rem; margin-top: 4px; font-family: "JetBrains Mono", monospace;'>
+                MODE: <strong style='color: {"#f59e0b" if is_paper else "#10b981"};'>{'PAPER (₹1.00L)' if is_paper else 'ZERODHA LIVE'}</strong>
             </div>
         </div>
         """, unsafe_allow_html=True)
-    
-    # Account Telemetry Row
+        
+    # Account Operational Telemetry Strip (Flat, High-Contrast, Tabular Figures)
     st.markdown("---")
     m1, m2, m3, m4, m5 = st.columns(5)
-    total_eq = portfolio_data.get("total_equity", 100000.0)
-    cash_avail = portfolio_data.get("cash", 100000.0)
-    unreal_pnl = portfolio_data.get("unrealized_pnl", 0.0)
-    real_pnl = portfolio_data.get("realized_pnl", 0.0)
-    init_cap = portfolio_data.get("initial_capital", 100000.0)
+    total_eq = float(portfolio_data.get("total_equity", 100000.0))
+    cash_avail = float(portfolio_data.get("cash", 100000.0))
+    unreal_pnl = float(portfolio_data.get("unrealized_pnl", 0.0))
+    real_pnl = float(portfolio_data.get("realized_pnl", 0.0))
+    init_cap = float(portfolio_data.get("initial_capital", 100000.0))
     total_ret_pct = ((total_eq - init_cap) / init_cap) * 100.0
     
-    ret_prefix = "▲ +" if total_ret_pct >= 0 else "▼ "
-    m1.metric("💰 Total Portfolio Value", format_currency_inr(total_eq), f"{ret_prefix}{total_ret_pct:.2f}%", delta_color="normal")
+    m1.metric("💰 Total Portfolio Value", format_currency_inr(total_eq), f"{total_ret_pct:+.2f}%", delta_color="normal")
     m2.metric("💵 Available Cash Margin", format_currency_inr(cash_avail))
+    m3.metric("📈 Live Open P&L", format_currency_inr(unreal_pnl), f"{unreal_pnl:+,.2f} ₹", delta_color="normal")
+    m4.metric("📊 Realized P&L Today", format_currency_inr(real_pnl), f"{real_pnl:+,.2f} ₹", delta_color="normal")
     
-    unreal_arr = "▲ +" if unreal_pnl >= 0 else "▼ "
-    m3.metric("📈 Live Open P&L", format_currency_inr(unreal_pnl), f"{unreal_arr}{unreal_pnl:,.2f} ₹", delta_color="normal")
-    
-    real_arr = "▲ +" if real_pnl >= 0 else "▼ "
-    m4.metric("🏆 Realized P&L", format_currency_inr(real_pnl), f"{real_arr}{real_pnl:,.2f} ₹", delta_color="normal")
-    
-    m5.metric("📦 Active Trades", f"{portfolio_data.get('open_positions_count', 0)} / {config.MAX_CONCURRENT_POSITIONS} Legs")
+    # Dynamic Max Daily Risk & Today's SL Breaches
+    max_daily_risk = max(2000.0, 0.015 * init_cap)
+    closed = get_closed_trades(limit=50)
+    today_str = get_ist_now().strftime("%Y-%m-%d")
+    today_losses = [t for t in closed if float(t.get("net_pnl", 0.0)) < 0 and str(t.get("exit_time", "")).startswith(today_str)]
+    m5.metric("🛡️ Max Daily Risk Floor", f"₹{max_daily_risk:,.2f}", f"{len(today_losses)}/3 SL Hit Today", delta_color="off")
 
 render_live_header_telemetry()
 
@@ -1990,37 +2005,59 @@ elif active_tab in ["🎯 Smart Stock Advisor (When to Buy/Sell)", "🎯 Easy St
         sl = analysis.get("stop_loss", {"price": curr_p * 0.98, "loss_pct": 2.0})
         entry_z = analysis.get("entry_zone", f"₹{curr_p * 0.998:.2f} – ₹{curr_p:.2f}")
 
-        # Visual Continuous Multi-Target Price Axis Ladder
+        # Proportional Visual R:R Price Ladder
+        p_sl = float(sl.get("price", curr_p * 0.98))
+        p_entry = float(curr_p)
+        p_t1 = float(t1.get("price", curr_p * 1.03))
+        p_t2 = float(t2.get("price", curr_p * 1.06))
+        
+        total_span = max(0.01, p_t2 - p_sl)
+        pct_entry = ((p_entry - p_sl) / total_span) * 100.0
+        pct_t1 = ((p_t1 - p_sl) / total_span) * 100.0
+        
         st.markdown(f"""
-        <div class='op-card' style='padding: 14px 18px; margin: 12px 0;'>
-            <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;'>
-                <div style='font-size: 0.80rem; font-weight: 700; color: #94a3b8; text-transform: uppercase;'>📐 Multi-Target Risk-to-Reward Price Axis</div>
+        <div class='op-card' style='padding: 16px 20px; margin: 14px 0;'>
+            <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;'>
+                <div style='font-size: 0.82rem; font-weight: 700; color: #94a3b8; text-transform: uppercase;'>📐 Proportional Risk-to-Reward Price Ladder</div>
                 <span class='badge-bull'>Blended R:R: 2.00R (Gross) &bull; ≥1.60R Net Gate</span>
             </div>
-            <div style='display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; align-items: center; gap: 8px;'>
-                <div style='background: rgba(244, 63, 94, 0.12); border: 1px solid rgba(244, 63, 94, 0.4); border-radius: 8px; padding: 10px; text-align: center;'>
-                    <div style='font-size: 0.68rem; color: #f43f5e; font-weight: 700;'>🛑 SAFETY STOP-LOSS</div>
-                    <div class='price-text-bear' style='font-size: 1.15rem !important;'>₹{sl['price']:,.2f}</div>
-                    <div style='font-size: 0.72rem; color: #fca5a5;'>▼ -{sl.get('loss_pct', 0.0):.2f}% Risk</div>
+            
+            <div style='position: relative; height: 12px; background: #1e293b; border-radius: 6px; margin: 28px 10px 36px 10px;'>
+                <div style='position: absolute; left: 0%; width: {pct_entry:.1f}%; height: 100%; background: #f43f5e; border-radius: 6px 0 0 6px;'></div>
+                <div style='position: absolute; left: {pct_entry:.1f}%; width: {pct_t1 - pct_entry:.1f}%; height: 100%; background: #10b981;'></div>
+                <div style='position: absolute; left: {pct_t1:.1f}%; width: {100.0 - pct_t1:.1f}%; height: 100%; background: #059669; border-radius: 0 6px 6px 0;'></div>
+                
+                <div style='position: absolute; left: 0%; top: -24px; font-size: 0.72rem; color: #f43f5e; font-weight: 700; font-family: "JetBrains Mono", monospace;'>
+                    🛑 SL: ₹{p_sl:,.2f}
                 </div>
-                <div style='color: #64748b; font-size: 1.2rem; font-weight: 800;'>→</div>
-                <div style='background: #161d2d; border: 1px solid #38bdf8; border-radius: 8px; padding: 10px; text-align: center;'>
-                    <div style='font-size: 0.68rem; color: #38bdf8; font-weight: 700;'>📍 IDEAL ENTRY ZONE</div>
-                    <div style='font-size: 1.15rem; font-weight: 800; color: #f8fafc; font-family: "JetBrains Mono", monospace;'>₹{curr_p:,.2f}</div>
-                    <div style='font-size: 0.72rem; color: #94a3b8;'>Market Price</div>
+                <div style='position: absolute; left: 0%; top: 16px; font-size: 0.68rem; color: #fca5a5; font-family: "JetBrains Mono", monospace;'>
+                    -{sl.get('loss_pct', 0.0):.1f}% Risk
                 </div>
-                <div style='color: #64748b; font-size: 1.2rem; font-weight: 800;'>→</div>
-                <div style='background: rgba(16, 185, 129, 0.10); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 10px; text-align: center;'>
-                    <div style='font-size: 0.68rem; color: #10b981; font-weight: 700;'>🎯 TARGET 1 (50% LOCK)</div>
-                    <div class='price-text-bull' style='font-size: 1.15rem !important;'>₹{t1['price']:,.2f}</div>
-                    <div style='font-size: 0.72rem; color: #86efac;'>▲ +{t1.get('gain_pct', 0.0):.2f}% (1.5R)</div>
+                
+                <div style='position: absolute; left: {pct_entry:.1f}%; top: -24px; transform: translateX(-50%); font-size: 0.72rem; color: #38bdf8; font-weight: 700; font-family: "JetBrains Mono", monospace;'>
+                    📍 ENTRY: ₹{p_entry:,.2f}
                 </div>
-                <div style='color: #64748b; font-size: 1.2rem; font-weight: 800;'>→</div>
-                <div style='background: rgba(16, 185, 129, 0.16); border: 1.5px solid #10b981; border-radius: 8px; padding: 10px; text-align: center;'>
-                    <div style='font-size: 0.68rem; color: #10b981; font-weight: 700;'>🚀 TARGET 2 (RUNNER)</div>
-                    <div class='price-text-bull' style='font-size: 1.15rem !important;'>₹{t2['price']:,.2f}</div>
-                    <div style='font-size: 0.72rem; color: #86efac;'>▲ +{t2.get('gain_pct', 0.0):.2f}% (2.5R)</div>
+                <div style='position: absolute; left: {pct_entry:.1f}%; top: 16px; transform: translateX(-50%); font-size: 0.68rem; color: #94a3b8;'>
+                    Base Level
                 </div>
+                
+                <div style='position: absolute; left: {pct_t1:.1f}%; top: -24px; transform: translateX(-50%); font-size: 0.72rem; color: #10b981; font-weight: 700; font-family: "JetBrains Mono", monospace;'>
+                    🎯 T1: ₹{p_t1:,.2f}
+                </div>
+                <div style='position: absolute; left: {pct_t1:.1f}%; top: 16px; transform: translateX(-50%); font-size: 0.68rem; color: #86efac;'>
+                    50% Lock 🔒
+                </div>
+                
+                <div style='position: absolute; right: 0%; top: -24px; font-size: 0.72rem; color: #10b981; font-weight: 800; font-family: "JetBrains Mono", monospace;'>
+                    🚀 T2: ₹{p_t2:,.2f}
+                </div>
+                <div style='position: absolute; right: 0%; top: 16px; font-size: 0.68rem; color: #86efac;'>
+                    Runner (2.5R)
+                </div>
+            </div>
+            
+            <div style='font-size: 0.76rem; color: #94a3b8; margin-top: 6px;'>
+                🔒 <strong>Dynamic Breakeven Milestone:</strong> When Target 1 (₹{p_t1:,.2f}) is touched, 50% profits are automatically locked and Stop-Loss moves to Breakeven (₹{p_entry:,.2f}).
             </div>
         </div>
         """, unsafe_allow_html=True)
