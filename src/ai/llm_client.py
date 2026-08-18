@@ -139,6 +139,13 @@ class LLMClient:
             formatted_msg = self._format_error_message(e)
             raise RuntimeError(formatted_msg) from None
 
+    def generate_response(self, user_prompt: str, system_prompt: str = "") -> str:
+        """
+        Convenience wrapper for conversational responses.
+        """
+        sys_p = system_prompt or "You are an expert Indian stock market trading assistant."
+        return self.generate_completion(system_prompt=sys_p, user_prompt=user_prompt)
+
     def _call_anthropic(self, system_prompt: str, user_prompt: str) -> str:
         """Direct Anthropic Claude Messages API call."""
         headers = {
