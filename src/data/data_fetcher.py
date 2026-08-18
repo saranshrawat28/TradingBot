@@ -42,6 +42,8 @@ TICKER_ALIASES = {
     "SENSEX.BO": "^BSESN",
     "TATAMOTORS": "TMCV.NS",
     "TATAMOTORS.NS": "TMCV.NS",
+    "TATA MOTORS": "TMCV.NS",
+    "TATA MOTORS.NS": "TMCV.NS",
     "TATAMTR": "TMCV.NS",
     "TMPV": "TMPV.NS",
     "TMCV": "TMCV.NS",
@@ -51,16 +53,33 @@ TICKER_ALIASES = {
     "ETERNAL.NS": "ETERNAL.NS",
     "RIL": "RELIANCE.NS",
     "RELIANCE": "RELIANCE.NS",
+    "RELIANCE.NS": "RELIANCE.NS",
+    "INFY": "INFY.NS",
+    "INFOSYS": "INFY.NS",
+    "INFOSYS.NS": "INFY.NS",
+    "TCS": "TCS.NS",
+    "TCS.NS": "TCS.NS",
     "HDFC": "HDFCBANK.NS",
     "HDFCBANK": "HDFCBANK.NS",
+    "HDFC BANK": "HDFCBANK.NS",
+    "ICICI": "ICICIBANK.NS",
+    "ICICIBANK": "ICICIBANK.NS",
+    "ICICI BANK": "ICICIBANK.NS",
     "SBI": "SBIN.NS",
     "SBIN": "SBIN.NS",
+    "STATE BANK": "SBIN.NS",
     "AIRTEL": "BHARTIARTL.NS",
     "BHARTI": "BHARTIARTL.NS",
+    "BHARTI AIRTEL": "BHARTIARTL.NS",
     "L&T": "LT.NS",
     "LT": "LT.NS",
+    "LARSEN": "LT.NS",
     "M&M": "M&M.NS",
     "MAHINDRA": "M&M.NS",
+    "SUN PHARMA": "SUNPHARMA.NS",
+    "SUNPHARMA": "SUNPHARMA.NS",
+    "BAJAJ FINANCE": "BAJFINANCE.NS",
+    "BAJFINANCE": "BAJFINANCE.NS",
     "PAYTM": "PAYTM.NS",
     "SUZLON": "SUZLON.NS",
     "HAL": "HAL.NS",
@@ -374,3 +393,38 @@ def get_historical_data(
         pass
         
     return df
+
+def get_option_chain_data(symbol: str = "NIFTY", dte_days: Optional[float] = None) -> dict:
+    """
+    Fetch / generate high-precision synchronized NFO Option Chain with Greeks,
+    Open Interest, Max Pain, and Put-Call Ratio (PCR).
+    """
+    from src.strategies.options_greeks import OptionChainBuilder
+    
+    clean_sym = clean_symbol(symbol)
+    quote = get_live_quote(clean_sym)
+    spot_price = float(quote.get("price", 0.0))
+    if spot_price <= 0:
+        # Fallback default spots for indices
+        if "BANKNIFTY" in clean_sym.upper():
+            spot_price = 51200.0
+        elif "NIFTY" in clean_sym.upper():
+            spot_price = 24650.0
+        else:
+            spot_price = 1000.0
+
+    # If DTE not specified, calculate days remaining until next Thursday (Indian weekly expiry)
+    if dte_days is None:
+        now = get_ist_now()
+        # Thursday is weekday 3 (Monday is 0)
+        days_ahead = (3 - now.weekday()) % 7
+        if days_ahead == 0 and now.hour >= 15 and now.minute >= 30:
+            days_ahead = 7
+        dte_days = max(0.2, float(days_ahead) + max(0.0, (15.5 - (now.hour + now.minute / 60.0)) / 6.25))
+
+    return OptionChainBuilder.build_option_chain_matrix(
+        symbol=clean_sym,
+        spot_price=spot_price,
+        dte_days=round(dte_days, 2)
+    )
+

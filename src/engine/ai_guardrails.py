@@ -24,6 +24,7 @@ class AIGuardrails:
         max_daily_loss_pct: float = 3.0,
         max_concurrent_legs: int = 1,
         max_lots_per_trade: int = 1,
+        max_risk_per_trade_pct: float = 0.01,
         sl_cooldown_minutes: int = 15,
         min_confidence_threshold: float = 7.5,
         max_bid_ask_spread_pct: float = 2.5
@@ -32,6 +33,7 @@ class AIGuardrails:
         self.max_daily_loss_pct = max_daily_loss_pct
         self.max_concurrent_legs = max_concurrent_legs
         self.max_lots_per_trade = max_lots_per_trade
+        self.max_risk_per_trade_pct = max_risk_per_trade_pct
         self.sl_cooldown_minutes = sl_cooldown_minutes
         self.min_confidence_threshold = min_confidence_threshold
         self.max_bid_ask_spread_pct = max_bid_ask_spread_pct
@@ -40,6 +42,59 @@ class AIGuardrails:
         self.cooldown_tracker: dict[str, datetime] = {} # symbol -> cooldown expiry time
         self.circuit_broken: bool = False
         self.circuit_break_reason: str = ""
+        self.daily_high_water_mark: float = 0.0
+        self.capital_sod: float = 0.0
+
+    @classmethod
+    def calculate_breakeven_sl(
+        cls,
+        entry_price: float,
+        side: str = "BUY",
+        is_option: bool = False,
+        buffer_pct: float = 0.002
+    ) -> float:
+        """
+        Calculates Breakeven Stop-Loss:
+        - Long Asset (Equity, Long Call, Long Put): Entry Price + Brokerage Buffer (e.g. +0.2%)
+        - Short Asset (Equity Short / Futures Short): Entry Price - Brokerage Buffer (e.g. -0.2%)
+        """
+        if side.upper() == "BUY" or is_option:
+            return round(entry_price * (1.0 + buffer_pct), 2)
+        else:
+            return round(entry_price * (1.0 - buffer_pct), 2)
+
+    @classmethod
+    def calculate_dynamic_position_size(
+        cls,
+        capital: float,
+        entry_price: float,
+        sl_price: float,
+        atr: float = 0.0,
+        lot_size: int = 1,
+        max_lots_cap: int = 2,
+        risk_pct: float = 0.01,
+        max_capital_cap: float = 0.30
+    ) -> int:
+        """
+        Dynamic ATR-Based Risk Sizing:
+        Sizes position so that hitting Stop-Loss risks approximately 1% of account capital.
+        Strict Hierarchy: Sizing is strictly bounded by max_lots_cap and max_capital_cap.
+        """
+        if capital <= 0 or entry_price <= 0:
+            return lot_size
+
+        risk_amount = capital * risk_pct
+        risk_per_share = max(entry_price * 0.005, abs(entry_price - sl_price), (1.2 * atr) if atr > 0 else 0.0)
+        
+        raw_shares = int(risk_amount / risk_per_share) if risk_per_share > 0 else lot_size
+        raw_lots = max(1, raw_shares // lot_size) if lot_size > 1 else max(1, raw_shares)
+        
+        # Hard Cap Hierarchy (Min bound strictly wins)
+        max_capital_shares = int((capital * max_capital_cap) / entry_price) if entry_price > 0 else raw_shares
+        max_capital_lots = max(1, max_capital_shares // lot_size) if lot_size > 1 else max(1, max_capital_shares)
+        
+        final_lots = max(1, min(raw_lots, max_lots_cap, max_capital_lots))
+        return int(final_lots * lot_size)
 
     def evaluate_proposal(
         self,
@@ -53,8 +108,8 @@ class AIGuardrails:
         Returns: (is_approved: bool, reason: str, sanitized_order: dict)
         """
         action = proposal.get("action", "HOLD")
-        target_asset = proposal.get("target_asset", "NIFTY")
-        confidence = proposal.get("confidence_score", 0.0)
+        target_asset = proposal.get("target_asset", proposal.get("symbol", "NIFTY"))
+        confidence = float(proposal.get("confidence_score") if proposal.get("confidence_score") is not None else proposal.get("confidence", 0.0))
         
         # If AI proposes HOLD or EXIT, allow through safely
         if action == "HOLD":
@@ -62,25 +117,49 @@ class AIGuardrails:
         if action == "EXIT_POSITION":
             return True, "AI proposed EXIT_POSITION. Square-off approved.", {"action": "EXIT", "symbol": target_asset}
             
-        # 1. Circuit Breaker / Daily Loss Limit Check
+        # 1. Circuit Breakers: Drawdown Limit & Trailing High-Water Mark Profit Lock
         daily_pnl = portfolio_state.get("daily_pnl", 0.0)
         total_capital = portfolio_state.get("capital", 100000.0)
+        
+        if self.capital_sod <= 0:
+            self.capital_sod = float(portfolio_state.get("initial_capital", total_capital))
+            
+        self.daily_high_water_mark = max(self.daily_high_water_mark, daily_pnl)
         max_loss_allowed = min(self.max_daily_loss_flat, (self.max_daily_loss_pct / 100.0) * total_capital)
         
-        if self.circuit_broken or daily_pnl <= -abs(max_loss_allowed):
+        if self.circuit_broken:
+            return False, self.circuit_break_reason, {"action": "HOLD"}
+            
+        if daily_pnl <= -abs(max_loss_allowed):
             self.circuit_broken = True
             self.circuit_break_reason = f"🛑 Hard Daily Drawdown Limit Hit! Realized PnL: ₹{daily_pnl:,.2f} (Limit: -₹{max_loss_allowed:,.2f})"
             self._log_audit("BLOCKED", proposal, self.circuit_break_reason)
             return False, self.circuit_break_reason, {"action": "HOLD"}
 
-        # 2. AI Confidence Threshold Filter
-        if confidence < self.min_confidence_threshold:
-            reason = f"⚠️ AI Confidence ({confidence}/10) is below required safety threshold ({self.min_confidence_threshold}/10)."
+        # Trailing High-Water Mark Profit Lock Trigger
+        hwm_threshold = max(2000.0, 0.015 * self.capital_sod)
+        if self.daily_high_water_mark >= hwm_threshold and daily_pnl <= (0.50 * self.daily_high_water_mark):
+            self.circuit_broken = True
+            self.circuit_break_reason = f"🛡️ Trailing Daily Profit Lock Triggered! Peak P&L was ₹{self.daily_high_water_mark:,.2f}, current P&L dropped to ₹{daily_pnl:,.2f} <= Floor ₹{0.50 * self.daily_high_water_mark:,.2f}. Halting new entries to preserve profits."
+            self._log_audit("BLOCKED", proposal, self.circuit_break_reason)
+            return False, self.circuit_break_reason, {"action": "HOLD"}
+
+        # 2. AI Confidence & Session Threshold Filter
+        now_ist = get_ist_now()
+        required_conf = self.min_confidence_threshold
+        is_midday_chop = False
+        if enforce_time_cutoff:
+            hour_minute = now_ist.hour * 100 + now_ist.minute
+            is_midday_chop = (1130 <= hour_minute < 1330)
+            if is_midday_chop:
+                required_conf = max(self.min_confidence_threshold, 8.0)
+
+        if confidence < required_conf:
+            reason = f"⚠️ AI Confidence ({confidence}/10) is below required safety threshold ({required_conf}/10{f' [Mid-day Chop Elevate: {required_conf:.1f}]' if is_midday_chop else ''})."
             self._log_audit("BLOCKED", proposal, reason)
             return False, reason, {"action": "HOLD"}
             
         # 3. Post-SL Revenge Trading Cooldown Filter
-        now_ist = get_ist_now()
         if target_asset in self.cooldown_tracker:
             cooldown_expiry = self.cooldown_tracker[target_asset]
             if now_ist < cooldown_expiry:
@@ -103,20 +182,35 @@ class AIGuardrails:
                     self._log_audit("BLOCKED", proposal, reason)
                     return False, reason, {"action": "HOLD"}
 
-        # 5. Time-of-Day Check (Exclude 09:15-09:25 opening spike & 15:00-15:15 closing auction)
+        # 5. Time-of-Day Check (Hard Defensive Block: 09:15-09:25 opening spike & 15:00-15:30 closing auction)
         if enforce_time_cutoff:
             open_spike_cutoff = now_ist.replace(hour=9, minute=25, second=0, microsecond=0)
             market_close_cutoff = now_ist.replace(hour=15, minute=0, second=0, microsecond=0)
             if now_ist < open_spike_cutoff:
-                reason = "🛑 Opening Volatility Gate: No new positions permitted during 09:15–09:25 AM opening spike."
+                reason = "🛑 Opening Volatility Gate: No new positions permitted during 09:15–09:25 AM opening spike (Strict Hard Block)."
                 self._log_audit("BLOCKED", proposal, reason)
                 return False, reason, {"action": "HOLD"}
             if now_ist >= market_close_cutoff:
-                reason = "🛑 Closing Auction Gate: Market is near 3:15 PM IST close. No new positions permitted after 3:00 PM."
+                reason = "🛑 Closing Auction Gate: Market is near 3:15 PM IST close. No new positions permitted after 3:00 PM (Strict Hard Block)."
                 self._log_audit("BLOCKED", proposal, reason)
                 return False, reason, {"action": "HOLD"}
 
-        # 6. Index Correlation Gate (Never buy long equity if Nifty is plunging > -1.0%)
+        # 6. Candle Wick Rejection & Liquidity Trap Gate (VSA Filter)
+        upper_wick_ratio = float(proposal.get("upper_wick_ratio", 0.0))
+        if action in ["BUY_STOCK", "BUY_CALL"] and upper_wick_ratio >= 0.45:
+            reason = f"🛑 Liquidity Trap Gate: Trigger candle has {upper_wick_ratio*100:.0f}% upper shadow (severe supply rejection into resistance)."
+            self._log_audit("BLOCKED", proposal, reason)
+            return False, reason, {"action": "HOLD"}
+
+        # 7. Low-Volume Breakout Trap Gate
+        strategy = str(proposal.get("strategy", "")).upper()
+        rvol = float(proposal.get("rvol", proposal.get("metrics", {}).get("rvol", 1.0)))
+        if "BREAKOUT" in strategy and rvol < 1.00:
+            reason = f"🛑 Low-Volume Breakout Gate: Volume is below 20-period average (RVol: {rvol:.2f}x < 1.00x). False breakout risk."
+            self._log_audit("BLOCKED", proposal, reason)
+            return False, reason, {"action": "HOLD"}
+
+        # 8. Index Correlation Gate (Never buy long equity if Nifty is plunging > -1.0%)
         nifty_chg = portfolio_state.get("nifty_change_pct", 0.0)
         is_index = any(idx in target_asset.upper() for idx in ["NIFTY", "BANKNIFTY", "FINNIFTY", "^NSEI", "^NSEBANK"])
         if not is_index and action in ["BUY_STOCK", "BUY_CALL"] and nifty_chg <= -1.0:
@@ -124,7 +218,7 @@ class AIGuardrails:
             self._log_audit("BLOCKED", proposal, reason)
             return False, reason, {"action": "HOLD"}
 
-        # 7. Net-of-Fees Risk-to-Reward Ratio Check (Blended Multi-Target Expectancy >= 1.6:1)
+        # 9. Net-of-Fees Risk-to-Reward Ratio Check (Blended Multi-Target Expectancy >= 1.6:1)
         sl_pct = float(proposal.get("suggested_sl_pct", 1.5))
         tp1_pct = float(proposal.get("suggested_tp_pct", 2.25))
         tp2_pct = float(proposal.get("suggested_tp2_pct", tp1_pct * 1.67))
@@ -141,15 +235,14 @@ class AIGuardrails:
             self._log_audit("BLOCKED", proposal, reason)
             return False, reason, {"action": "HOLD"}
                 
-        # 8. Max Concurrent Position Cap
+        # 10. Max Concurrent Position Cap
         open_positions = portfolio_state.get("open_positions", [])
         if len(open_positions) >= self.max_concurrent_legs:
             reason = f"🛑 Max concurrent positions cap reached ({len(open_positions)}/{self.max_concurrent_legs} legs active)."
             self._log_audit("BLOCKED", proposal, reason)
             return False, reason, {"action": "HOLD"}
                     
-        # 9. Quantity & Position Sizing Sanitize
-        # Calculate standard lot sizes (Nifty = 25, BankNifty = 15, Equities = calculated)
+        # 11. Dynamic ATR Position Sizing with Strict Hard Cap Precedence
         if "NIFTY" in target_asset:
             lot_size = 25
         elif "BANKNIFTY" in target_asset:
@@ -157,7 +250,20 @@ class AIGuardrails:
         else:
             lot_size = 1
             
-        qty = lot_size * self.max_lots_per_trade
+        total_cap = float(portfolio_state.get("capital", 100000.0))
+        entry_p = float(proposal.get("entry_price", 100.0))
+        sl_p = float(proposal.get("sl", entry_p * (1.0 - sl_pct/100.0)))
+        atr_v = float(proposal.get("atr", proposal.get("metrics", {}).get("atr", 0.0)))
+        
+        qty = self.calculate_dynamic_position_size(
+            capital=total_cap,
+            entry_price=entry_p,
+            sl_price=sl_p,
+            atr=atr_v,
+            lot_size=lot_size,
+            max_lots_cap=self.max_lots_per_trade,
+            risk_pct=self.max_risk_per_trade_pct
+        )
         
         sanitized_order = {
             "action": action,

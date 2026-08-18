@@ -13,7 +13,11 @@ from src.data.data_fetcher import get_historical_data, get_live_quote
 from src.strategies.indicators import (
     calculate_ema, calculate_rsi, calculate_macd,
     calculate_bollinger_bands, calculate_atr, calculate_supertrend,
-    calculate_adx, calculate_vwap, add_all_indicators
+    calculate_adx, calculate_vwap, add_all_indicators,
+    detect_rsi_divergence, calculate_candle_structure, calculate_mtf_alignment,
+    calculate_intraday_vwap_bands, calculate_rvol, calculate_context_multiplier,
+    calculate_obv, calculate_classical_pivots, calculate_fibonacci_pivots,
+    evaluate_vwap_location_score, evaluate_pivot_confluence
 )
 from src.utils.helpers import clean_symbol, display_symbol_name, format_currency_inr
 
@@ -23,10 +27,12 @@ class StockAdvisor:
     """
 
     @classmethod
-    def evaluate_df_slice(cls, df: pd.DataFrame, symbol: str = "ASSET") -> Dict[str, Any]:
+    def evaluate_df_slice(cls, df: pd.DataFrame, symbol: str = "ASSET", horizon: str = "intraday", index_trend: str = "BULLISH") -> Dict[str, Any]:
         """
         Evaluates a slice of historical candles (strictly closed bars) using
-        orthogonal category capping and ADX regime filters.
+        orthogonal category capping, single combined context multiplier (ADX + Macro Breadth),
+        symmetric MTF trend multipliers, divergence asymmetric gates, 4-zone VWAP sigma-location,
+        symmetric 4-case pivot confluence, and pure RVol flow.
         """
         if df.empty or len(df) < 25:
             return {"status": "ERROR", "score": 5.0, "message": "Insufficient data"}
@@ -34,37 +40,51 @@ class StockAdvisor:
         close = df["Close"]
         high = df["High"]
         low = df["Low"]
-        volume = df["Volume"] if "Volume" in df.columns else pd.Series(1, index=df.index)
-        
+        volume = df["Volume"]
+        open_ = df["Open"] if "Open" in df.columns else close
+
         curr_p = float(close.iloc[-1])
         prev_p = float(close.iloc[-2]) if len(close) > 1 else curr_p
         
-        # Calculate Indicators (Ensuring all are available)
+        # Previous Session High, Low, Close for Pivots
+        prev_h = float(high.iloc[-2]) if len(high) > 1 else float(high.iloc[-1])
+        prev_l = float(low.iloc[-2]) if len(low) > 1 else float(low.iloc[-1])
+        prev_c = float(close.iloc[-2]) if len(close) > 1 else float(close.iloc[-1])
+        pivots = calculate_classical_pivots(prev_h, prev_l, prev_c)
+        fib_pivots = calculate_fibonacci_pivots(prev_h, prev_l, prev_c)
+
+        # Baseline Vectorized Indicators
         ema9 = float(calculate_ema(close, 9).iloc[-1])
         ema21 = float(calculate_ema(close, 21).iloc[-1])
-        ema50 = float(calculate_ema(close, 50).iloc[-1]) if len(df) >= 50 else ema21
-        ema200 = float(calculate_ema(close, 200).iloc[-1]) if len(df) >= 200 else ema50
+        ema50 = float(calculate_ema(close, 50).iloc[-1])
+        ema200 = float(calculate_ema(close, min(len(close), 200)).iloc[-1])
         
-        rsi = float(calculate_rsi(close, 14).iloc[-1])
-        macd, macd_sig, macd_hist = calculate_macd(close, 12, 26, 9)
+        rsi_series = calculate_rsi(close, 14)
+        rsi = float(rsi_series.iloc[-1])
+        
+        macd_line, macd_signal, macd_hist = calculate_macd(close, 12, 26, 9)
         last_hist = float(macd_hist.iloc[-1])
         prev_hist = float(macd_hist.iloc[-2]) if len(macd_hist) > 1 else last_hist
         
-        st, st_dir = calculate_supertrend(high, low, close, 10, 3.0)
+        supertrend, st_dir = calculate_supertrend(high, low, close, 10, 3.0)
         last_st_dir = int(st_dir.iloc[-1])
         
-        atr = round(float(calculate_atr(high, low, close, 14).iloc[-1]), 2)
-        adx_s, p_di, m_di = calculate_adx(high, low, close, 14)
-        last_adx = float(adx_s.iloc[-1])
-        last_pdi = float(p_di.iloc[-1])
-        last_mdi = float(m_di.iloc[-1])
+        adx_res = calculate_adx(high, low, close, 14)
+        adx_s = adx_res[0] if isinstance(adx_res, tuple) else adx_res
+        last_adx = float(adx_s.iloc[-1]) if not adx_s.empty else 22.0
         
-        vwap_val = float(calculate_vwap(high, low, close, volume).iloc[-1])
+        atr_val = float(calculate_atr(high, low, close, 14).iloc[-1])
+        rvol_val = calculate_rvol(volume, 20)
+        vwap_bands = calculate_intraday_vwap_bands(df)
         
-        # 1. REGIME DETECTION (Continuous ADX Multiplier)
-        # mu(ADX) smoothly scales from 0.5 (Chop <= 20) to 1.0 (Trend >= 25)
+        mtf_info = calculate_mtf_alignment(df)
+        div_info = detect_rsi_divergence(close, low, high, rsi_series, lookback=20)
+        wick_info = calculate_candle_structure(open_, high, low, close)
+        
+        # 1. UNIFIED REGIME & CONTEXT (Smooth ADX + Macro Breadth)
         adx_factor = min(1.0, max(0.0, (last_adx - 20.0) / 5.0))
-        mu_trend = 0.5 + 0.5 * adx_factor
+        stock_dir = "BULLISH" if curr_p > ema50 else "BEARISH"
+        mu_context = calculate_context_multiplier(last_adx, stock_trend=stock_dir, index_trend=index_trend)
 
         if last_adx >= 25.0:
             regime = "TRENDING"
@@ -74,122 +94,182 @@ class StockAdvisor:
             regime_desc = f"Choppy consolidation / range-bound market (ADX: {last_adx:.1f})"
         else:
             regime = "TRANSITIONAL"
-            regime_desc = f"Developing momentum (ADX: {last_adx:.1f}, Scaling Factor: {mu_trend:.2f}x)"
+            regime_desc = f"Transitional market structure (ADX: {last_adx:.1f})"
 
         pros = []
         watchouts = []
 
         # =========================================================================
         # BUCKET 1: TREND ALIGNMENT (Exact Max +2.50 / Min -2.50 pts)
+        # Scaled ONCE by Unified Context Multiplier (ADX + Breadth) & MTF factor
         # =========================================================================
-        trend_pts = 0.0
+        raw_trend_sum = 0.0
         if ema9 > ema21:
-            trend_pts += 0.75
+            raw_trend_sum += 0.75
         elif ema9 < ema21:
-            trend_pts -= 0.75
+            raw_trend_sum -= 0.75
 
         if curr_p > ema50:
-            trend_pts += 0.75
+            raw_trend_sum += 0.75
         elif curr_p < ema50:
-            trend_pts -= 0.75
+            raw_trend_sum -= 0.75
 
         if curr_p > ema200:
-            trend_pts += 0.50
+            raw_trend_sum += 0.50
         elif curr_p < ema200:
-            trend_pts -= 0.50
+            raw_trend_sum -= 0.50
 
         if last_st_dir == 1:
-            trend_pts += 0.50
+            raw_trend_sum += 0.50
         elif last_st_dir == -1:
-            trend_pts -= 0.50
+            raw_trend_sum -= 0.50
             
-        # Apply continuous regime multiplier symmetrically to trend score
-        trend_pts = trend_pts * mu_trend
-        if mu_trend < 1.0:
+        # Apply combined context multiplier AND symmetric MTF factor to trend score
+        mu_mtf = mtf_info.get("mu_mtf", 1.00)
+        trend_pts = raw_trend_sum * mu_context * mu_mtf
+
+        if mtf_info.get("status") == "BULLISH_ALIGNED" and raw_trend_sum > 0:
+            pros.append("🌐 **Multi-Timeframe Confluence:** 5m trend confirmed by 15m structure (1.15x boost).")
+        elif mtf_info.get("status") == "BEARISH_ALIGNED" and raw_trend_sum < 0:
+            pros.append("🌐 **Multi-Timeframe Bearish Confluence:** Full downtrend alignment across timeframes (1.15x boost).")
+        elif mtf_info.get("status") in ["BEARISH_CONFLICT", "BULLISH_CONFLICT"]:
+            watchouts.append("⚠️ **HTF Conflict:** Higher timeframe structure conflicts with trade direction (0.70x scale).")
+
+        if mu_context < 1.0:
             if regime == "RANGE_BOUND":
-                watchouts.append("⚠️ **Range-Bound Market:** Trend signals scaled by 0.50x to avoid false breakouts.")
+                watchouts.append("⚠️ **Range-Bound Market:** Trend signals scaled by context factor to avoid false breakouts.")
             else:
-                watchouts.append(f"⚠️ **Transitional Regime:** Trend signals scaled by {mu_trend:.2f}x.")
+                watchouts.append(f"⚠️ **Macro Headwind / Transitional:** Trend signals scaled by {mu_context:.2f}x.")
         else:
             if trend_pts >= 1.5:
                 pros.append("🟢 **Confirmed Trend Alignment:** Price trades cleanly above key institutional EMAs.")
 
+        # Hard invariant: Clamped strictly to [-2.50, +2.50]
         trend_pts = max(-2.5, min(2.5, trend_pts))
 
         # =========================================================================
-        # BUCKET 2: MOMENTUM & RELATIVE STRENGTH (Max Capped at +2.0 / -2.0 pts)
+        # BUCKET 2: MOMENTUM & DIVERGENCE (Max Capped at +2.0 / -2.0 pts)
+        # Asymmetric Veto: Bearish Divergence clamps momentum to <= 0.0
         # =========================================================================
         mom_pts = 0.0
         if 50.0 <= rsi <= 68.0:
             mom_pts += 1.0
-            pros.append(f"🟢 **Optimal Buyer Energy:** RSI at {rsi:.1f} (Sweet spot with room to run).")
-        elif rsi > 70.0:
-            mom_pts -= 0.5
-            watchouts.append(f"⚠️ **Overheated:** RSI at {rsi:.1f} (Consider waiting for a pullback).")
+            pros.append(f"🟢 **Optimal Momentum Window:** RSI at {rsi:.1f} (Ideal expansion zone).")
+        elif rsi > 68.0:
+            mom_pts += 0.4
+            watchouts.append(f"⚠️ **Overbought Warning:** RSI at {rsi:.1f} (Approaching extreme).")
+        elif 35.0 <= rsi < 50.0:
+            mom_pts -= 0.6
         elif rsi < 35.0:
-            # Mean-reversion bonus in range-bound market, penalty in trending
             if regime == "RANGE_BOUND":
-                mom_pts += 1.0
-                pros.append(f"⚡ **Range Bounce Zone:** Oversold RSI at {rsi:.1f} inside support range.")
+                mom_pts += 0.5
+                pros.append(f"⚡ **Mean Reversion Bounce Zone:** RSI at {rsi:.1f} in range-bound structure.")
             else:
-                mom_pts -= 0.5
-                watchouts.append(f"🔴 **Heavy Selling Pressure:** RSI at {rsi:.1f}.")
+                mom_pts -= 1.0
+                watchouts.append(f"🔴 **Heavy Momentum Breakdown:** RSI oversold at {rsi:.1f} in active downtrend.")
 
         if last_hist > 0 and last_hist > prev_hist:
             mom_pts += 1.0
-            pros.append("🟢 **Expanding Velocity:** MACD histogram accelerating green.")
-        elif last_hist < 0:
-            mom_pts -= 0.5
+            pros.append("🟢 **Expanding Bullish MACD:** Histogram showing accelerating momentum.")
+        elif last_hist > 0 and last_hist <= prev_hist:
+            mom_pts += 0.3
+        elif last_hist < 0 and last_hist < prev_hist:
+            mom_pts -= 1.0
+            watchouts.append("🔴 **Bearish MACD Acceleration:** Negative histogram expanding downwards.")
+        elif last_hist < 0 and last_hist >= prev_hist:
+            mom_pts -= 0.3
+
+        # Asymmetric RSI Divergence Veto & Boost
+        if div_info.get("bearish_divergence"):
+            mom_pts = min(0.0, mom_pts - 0.75)
+            watchouts.append("🛑 **Asymmetric Veto (Bearish Divergence):** Price made higher high while RSI made lower high. Momentum capped <= 0.0.")
+        elif div_info.get("bullish_divergence"):
+            mom_pts += 0.50
+            pros.append("🟢 **Bullish Divergence Confirmed:** Price made lower low while RSI formed higher low.")
 
         mom_pts = max(-2.0, min(2.0, mom_pts))
 
         # =========================================================================
-        # BUCKET 3: VOLATILITY & LOCATION (Max Capped at +1.5 / -1.5 pts)
+        # BUCKET 3: VOLATILITY LOCATION & PIVOT CONFLUENCE (Max Capped at +1.5 / -1.5 pts)
+        # 4-Zone VWAP Location (Ungated Mean Reversion, Gated Directional Value, Exhaustion)
+        # + Symmetric 4-Case Pivot Confluence + Upper Wick Supply Trap
         # =========================================================================
         vol_loc_pts = 0.0
-        ub, mb, lb, bw, pct_b = calculate_bollinger_bands(close, 20, 2.0)
+        bb_upper, bb_mid, bb_lower, pct_b, bw = calculate_bollinger_bands(close, 20, 2.0)
         last_pct_b = float(pct_b.iloc[-1])
         last_bw = float(bw.iloc[-1])
 
         if 0.4 <= last_pct_b <= 0.8:
-            vol_loc_pts += 0.8 # Healthy mid-to-upper band location
+            vol_loc_pts += 0.4
         elif last_pct_b > 0.95:
-            vol_loc_pts -= 0.5 # Near extreme upper band
+            vol_loc_pts -= 0.4
             watchouts.append("⚠️ **Upper Band Tag:** Price pressing the 2-sigma Bollinger ceiling.")
         elif last_pct_b < 0.05:
             if regime == "RANGE_BOUND":
-                vol_loc_pts += 0.5 # Lower band bounce support
+                vol_loc_pts += 0.4
                 pros.append("⚡ **Lower Band Support:** Price holding lower 2-sigma band.")
             else:
-                vol_loc_pts -= 0.5 # Lower band breakdown risk
+                vol_loc_pts -= 0.4
                 watchouts.append("🔴 **Lower Band Breakdown:** Price pressing lower 2-sigma floor.")
 
-        # Squeeze expansion
-        if last_bw < 4.0:
-            vol_loc_pts += 0.7
-            pros.append("⚡ **Volatility Squeeze:** Tight Bollinger Bandwidth indicates impending explosive expansion.")
+        # 1. Horizon-gated 4-Zone VWAP Location
+        if horizon == "intraday" and vwap_bands["vwap"] > 0:
+            vwap_loc_score = evaluate_vwap_location_score(curr_p, vwap_bands, raw_trend=raw_trend_sum)
+            vol_loc_pts += vwap_loc_score
+            if vwap_loc_score >= 0.80:
+                pros.append(f"🟢 **Optimal VWAP Location:** Value/Discount support zone (VWAP: ₹{vwap_bands['vwap']:.2f}).")
+            elif vwap_loc_score <= -0.80:
+                watchouts.append(f"⚠️ **VWAP Location Penalty:** Overextended/Climax zone (VWAP: ₹{vwap_bands['vwap']:.2f}).")
+        else:
+            # Swing / Positional: Use distance from 21 EMA
+            ema_dist_pct = abs(curr_p - ema21) / curr_p
+            if ema_dist_pct <= 0.02 and curr_p >= ema21:
+                vol_loc_pts += 0.75
+                pros.append(f"🟢 **21 EMA Pullback Support:** Holding tight within 2% of key moving average (₹{ema21:.2f}).")
+
+        # 2. Symmetric 4-Case Pivot Confluence
+        piv_conf = evaluate_pivot_confluence(curr_p, pivots, raw_trend=raw_trend_sum)
+        vol_loc_pts += piv_conf
+        if piv_conf > 0:
+            pros.append(f"🟢 **Pivot Support Confluence:** Price holding key structural level (P: ₹{pivots['pivot']:.2f}).")
+        elif piv_conf < 0:
+            watchouts.append(f"⚠️ **Pivot Resistance Obstacle:** Approaching major overhead supply (R1: ₹{pivots['r1']:.2f}).")
+
+        # 3. Upper Wick Rejection Penalty (VSA Trap Filter)
+        if wick_info.get("is_upper_rejection"):
+            vol_loc_pts -= 0.4
+            watchouts.append(f"⚠️ **Upper Wick Supply Trap:** Trigger candle shows {wick_info['upper_wick_ratio']*100:.0f}% upper shadow (supply absorption).")
+        elif wick_info.get("is_lower_absorption"):
+            pros.append(f"🟢 **Lower Wick Demand Absorption:** Strong buying tail ({wick_info['lower_wick_ratio']*100:.0f}% lower shadow).")
 
         vol_loc_pts = max(-1.5, min(1.5, vol_loc_pts))
 
         # =========================================================================
         # BUCKET 4: VOLUME & INSTITUTIONAL FLOW (Max Capped at +1.5 / -1.5 pts)
+        # Pure Volume Metrics: RVol + OBV Flow (ZERO price/VWAP check to prevent collinearity)
         # =========================================================================
         flow_pts = 0.0
-        avg_vol = float(volume.iloc[-20:].mean()) if len(volume) >= 20 else 1.0
-        curr_vol = float(volume.iloc[-1])
         
-        if curr_vol > avg_vol * 1.25:
-            flow_pts += 0.8
-            pros.append("🟢 **Institutional Volume Surge:** Volume > 1.25x average.")
-        elif curr_vol < avg_vol * 0.50:
-            flow_pts -= 0.4
-            watchouts.append("⚠️ **Low Participation:** Volume is less than 50% of 20-period average.")
-            
-        if curr_p > vwap_val:
-            flow_pts += 0.7
-            pros.append(f"🟢 **Above Institutional Benchmark:** Trading above VWAP (₹{vwap_val:.2f}).")
-        else:
-            flow_pts -= 0.5
+        # 1. RVol Scoring
+        if rvol_val >= 1.50:
+            flow_pts += 0.80
+            pros.append(f"🟢 **Institutional Volume Surge:** RVol at {rvol_val:.2f}x average.")
+        elif rvol_val >= 1.15:
+            flow_pts += 0.40
+            pros.append(f"🟢 **Above-Average Volume:** RVol at {rvol_val:.2f}x.")
+        elif rvol_val < 0.80:
+            flow_pts -= 0.40
+            watchouts.append(f"⚠️ **Anemic Volume:** RVol at {rvol_val:.2f}x (Low institutional participation).")
+
+        # 2. OBV Flow
+        obv_series = calculate_obv(close, volume)
+        if len(obv_series) >= 10:
+            obv_slope = float(obv_series.iloc[-1] - obv_series.iloc[-10])
+            if obv_slope > 0:
+                flow_pts += 0.70
+                pros.append("🟢 **Positive On-Balance Volume:** Institutional accumulation active.")
+            else:
+                flow_pts -= 0.30
 
         flow_pts = max(-1.5, min(1.5, flow_pts))
 
@@ -226,7 +306,7 @@ class StockAdvisor:
         # =========================================================================
         # Continuous SL multiplier: 1.5x in Chop (ADX <= 20) -> 1.2x in Trend (ADX >= 25)
         sl_mult = 1.5 - (0.3 * adx_factor)
-        sl_distance = sl_mult * atr
+        sl_distance = sl_mult * atr_val
         sl_price = round(curr_p - sl_distance, 2)
         
         # Targets are tied directly to SL distance (1.5x SL and 2.5x SL)
@@ -280,8 +360,9 @@ class StockAdvisor:
                 "ema50": round(ema50, 2),
                 "rsi": round(rsi, 1),
                 "adx": round(last_adx, 1),
-                "atr": round(atr, 2),
-                "vwap": round(vwap_val, 2)
+                "atr": round(atr_val, 2),
+                "vwap": round(vwap_bands.get("vwap", 0.0), 2),
+                "rvol": round(rvol_val, 2)
             },
             "levels": {
                 "entry_zone": entry_zone_str,
@@ -290,6 +371,13 @@ class StockAdvisor:
                 "target_2": t2_price,
                 "risk_reward": f"1:{t1_rr} to Target 1 | 1:{t2_rr} to Target 2"
             },
+            "mtf_alignment": mtf_info,
+            "divergence": div_info,
+            "wick_structure": wick_info,
+            "vwap_structure": vwap_bands,
+            "pivots": pivots,
+            "fib_pivots": fib_pivots,
+            "rvol": rvol_val,
             "pros": pros,
             "watchouts": watchouts
         }
@@ -317,7 +405,7 @@ class StockAdvisor:
         if df.empty or len(df) < 25:
             return {"status": "ERROR", "message": f"Could not load sufficient data for {sym}"}
 
-        res = cls.evaluate_df_slice(df, sym)
+        res = cls.evaluate_df_slice(df, sym, horizon=horizon)
         res["horizon"] = horizon
         res["horizon_text"] = time_text
         res["holding_time_text"] = time_text

@@ -55,7 +55,7 @@ class TestSmartTradeManager(unittest.TestCase):
         self.assertEqual(rem_pos["quantity"], 25)
         self.assertEqual(rem_pos["target_1_hit"], 1)
         self.assertEqual(rem_pos["stage"], "BREAKEVEN_LOCKED")
-        self.assertEqual(rem_pos["trailing_sl"], 100.0) # Breakeven locked!
+        self.assertEqual(rem_pos["trailing_sl"], 107.5) # +0.5R profit locked (above breakeven)
 
     @patch("src.engine.trade_manager.get_live_quote")
     def test_target_2_full_exit(self, mock_quote):

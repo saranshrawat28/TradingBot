@@ -3,6 +3,7 @@ Zero-Risk Paper Trading Broker with realistic Indian regulatory taxes and fee mo
 """
 
 from datetime import datetime
+import time
 from typing import Optional, List, Dict, Any
 import config
 from src.brokers.base_broker import BaseBroker
@@ -164,6 +165,44 @@ class PaperBroker(BaseBroker):
         state = get_portfolio_state()
         cash = float(state.get("cash", config.DEFAULT_INITIAL_CAPITAL))
         
+        # Check if this is a Stop-Loss Market (SL-M) trigger order leg
+        if order_type.upper() == "SL-M":
+            existing = [p for p in get_open_positions() if p["symbol"] == sym]
+            order_id = f"SLM_{int(time.time()*1000)}"
+            if existing:
+                pos = existing[0]
+                pos["sl"] = sl or price or pos.get("sl")
+                pos["sl_order_id"] = order_id
+                save_position(pos)
+            
+            order_dict = {
+                "timestamp": get_ist_now().strftime("%Y-%m-%d %H:%M:%S IST"),
+                "symbol": sym,
+                "side": side.upper(),
+                "order_type": "SL-M",
+                "price": sl or price,
+                "quantity": quantity,
+                "value": (sl or price or 100.0) * quantity,
+                "fee": fee,
+                "status": "PENDING_TRIGGER",
+                "sl": sl,
+                "tp": tp,
+                "strategy": strategy_name,
+                "broker": "paper",
+                "notes": f"Exchange Stop-Loss Market Order Registered @ ₹{sl or price:.2f}"
+            }
+            log_order(order_dict)
+            return {
+                "status": "FILLED",
+                "order_id": order_id,
+                "symbol": sym,
+                "side": side,
+                "price": sl or price,
+                "quantity": quantity,
+                "order_type": "SL-M",
+                "fee": fee
+            }
+
         if side.upper() == "BUY":
             total_required = order_value + fee
             if cash < total_required:

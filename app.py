@@ -32,10 +32,15 @@ from src.engine.ai_guardrails import AIGuardrails
 from src.engine.reconciliation import StateReconciler
 from src.engine.trade_manager import SmartTradeManager
 from src.engine.auto_pilot_daemon import AutoPilotDaemon
+from src.engine.pre_market_analyzer import PreMarketAnalyzer
 from src.ai import (
     LLMClient, MarketPrompter, FailsafeParser, ConfidenceCalibrator,
     AITradingAgent, MarketRadarScanner
 )
+from src.ai.chat_assistant import TradingChatAssistant
+from src.ai.multi_agent_council import MultiAgentCouncil
+from src.engine.market_hunter_daemon import MarketHunterDaemon
+from src.engine.software_oco_manager import SoftwareOCOManager
 from src.brokers.zerodha_live import ZerodhaLiveBroker
 from src.backtest.ai_backtester import AIBacktester
 from src.brokers import get_broker, BROKERS_MAP
@@ -568,27 +573,50 @@ def render_live_stock_watcher():
 render_live_stock_watcher()
 
 # -------------------------------------------------------------
-# Sidebar Navigation & Stock Selection
+# Sidebar Navigation & Experience Mode Selector
 # -------------------------------------------------------------
 st.sidebar.markdown("""
-<div style='padding: 6px 0 12px 0;'>
-    <div style='font-size: 1.15rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif;'>🧭 TERMINAL MODULES</div>
-    <div style='font-size: 0.75rem; color: #94a3b8;'>Select active workstation</div>
+<div style='padding: 4px 0 8px 0;'>
+    <div style='font-size: 1.15rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif;'>🧭 APEXTRADE TERMINAL</div>
+    <div style='font-size: 0.75rem; color: #94a3b8;'>Choose your experience mode</div>
 </div>
 """, unsafe_allow_html=True)
 
-active_tab = st.sidebar.radio(
-    "Navigation:",
+ui_mode = st.sidebar.radio(
+    "Experience Mode:",
     [
+        "🌟 Simple & Easy Mode (Beginner Friendly)",
+        "⚡ Pro Quantitative Workstation"
+    ],
+    index=0,
+    help="Simple Mode gives clean Buy/Sell advice and pre-market picks with zero confusing jargon. Pro Mode provides Options Greeks, advanced indicators, and quantitative tooling."
+)
+
+st.sidebar.markdown("---")
+
+if ui_mode == "🌟 Simple & Easy Mode (Beginner Friendly)":
+    nav_options = [
+        "🗣️ Talk to Your AI Bot (Chat & Voice)",
+        "🌅 Pre-Market & Best Stocks Today",
+        "🎯 Easy Stock Advisor (Buy / Sell Advice)",
+        "🤖 AI Auto-Pilot (Automated Safe Trading)",
+        "📦 My Trades & Profit Book",
+        "⚙️ Simple Settings & Safety"
+    ]
+else:
+    nav_options = [
+        "🗣️ Talk to Your AI Bot (Chat & Voice)",
+        "🌅 Pre-Market & Best Stocks Today",
         "🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)",
+        "⚡ NFO Options Greeks & OI Matrix",
         "🎯 Smart Stock Advisor (When to Buy/Sell)",
         "📊 Strategy Backtester (Test Any Stock)",
         "⚡ Automated Live / Paper Bot",
         "🔍 Indian Market Screener (Scan All Stocks)",
         "⚙️ Settings & Risk Controls"
-    ],
-    label_visibility="collapsed"
-)
+    ]
+
+active_tab = st.sidebar.radio("Navigation:", nav_options, label_visibility="collapsed")
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("""
@@ -649,9 +677,349 @@ with st.sidebar.expander("🚨 Emergency Panic Kill Switch", expanded=False):
         st.rerun()
 
 # -------------------------------------------------------------
+# Pre-Market Opening Analyzer Helper
+# -------------------------------------------------------------
+def render_pre_market_tab(broker_instance):
+    st.markdown("""
+    <div style='margin-bottom: 8px;'>
+        <h2 style='margin: 0; font-family: "Outfit", sans-serif;'>🌅 Pre-Market Opening Analyzer & Best Intraday Stocks</h2>
+        <div style='color: #94a3b8; font-size: 0.92rem; margin-top: 4px;'>
+            Instant morning intelligence (09:00 - 09:15 AM IST) & curated AI stock suggestions with 1-Click execution.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.spinner("Analyzing Pre-Market Opening Cues & Scanning Top Stocks..."):
+        scan_data = PreMarketAnalyzer.scan_pre_market_stocks(top_n=3)
+        sentiment_info = scan_data["opening_sentiment"]
+        top_picks = scan_data["top_picks"]
+        gap_ups = scan_data["top_gap_ups"]
+        gap_downs = scan_data["top_gap_downs"]
+
+    s_badge_color = sentiment_info["badge_color"]
+    st.markdown(f"""
+    <div style='background: #111622; border: 1.5px solid {s_badge_color}; border-radius: 12px; padding: 18px 22px; margin-bottom: 16px;'>
+        <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;'>
+            <div>
+                <div style='font-size: 1.35rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif;'>
+                    {sentiment_info["title"]}
+                </div>
+                <div style='color: #cbd5e1; font-size: 0.90rem; margin-top: 6px; line-height: 1.4;'>
+                    {sentiment_info["explanation"]}
+                </div>
+            </div>
+            <div style='text-align: right;'>
+                <span style='background: {s_badge_color}22; color: {s_badge_color}; border: 1px solid {s_badge_color}; padding: 4px 12px; border-radius: 6px; font-weight: 700; font-size: 0.85rem;'>
+                    {sentiment_info["phase_description"]}
+                </span>
+                <div style='color: #94a3b8; font-size: 0.75rem; margin-top: 6px;'>
+                    Updated: {sentiment_info["timestamp"]}
+                </div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    q1, q2, q3, q4 = st.columns(4)
+    n_gap_sign = "+" if sentiment_info["gap_pct"] >= 0 else ""
+    q1.metric("🇮🇳 NIFTY 50", f"₹{sentiment_info['nifty_price']:,.2f}", f"{n_gap_sign}{sentiment_info['gap_pct']:.2f}% Gap", delta_color="normal")
+    q2.metric("🏦 BANK NIFTY", f"₹{sentiment_info['banknifty_price']:,.2f}")
+    q3.metric("⚡ INDIA VIX (Volatility)", f"{sentiment_info['vix_level']:.2f}", "Normal Market" if sentiment_info['vix_level'] < 16 else "High Volatility")
+    q4.metric("🎯 Scanned Universe", f"{scan_data['scanned_count']} Top Equities", "Top 3 Picks Below")
+
+    st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;'>
+        <div style='font-size: 1.2rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif;'>
+            🌟 Top 3 AI Recommended Stocks for Intraday Today
+        </div>
+        <span class='badge-bull'>HIGH ACCURACY SETUP &bull; 1-CLICK TRADE</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if top_picks:
+        pick_cols = st.columns(len(top_picks))
+        for i, pick in enumerate(top_picks):
+            with pick_cols[i]:
+                sym = pick["symbol"]
+                name = pick["display_name"]
+                price = pick["current_price"]
+                action = pick["action"]
+                act_title = pick["action_title"]
+                act_badge = pick["action_badge"]
+                t1 = pick["target_1_price"]
+                sl = pick["stop_loss_price"]
+                score = pick["score"]
+                reason = pick["reason"]
+
+                st.markdown(f"""
+                <div style='background: #111622; border: 1.5px solid {act_badge}; border-radius: 12px; padding: 18px; height: 100%; display: flex; flex-direction: column; justify-content: space-between;'>
+                    <div>
+                        <div style='display: flex; justify-content: space-between; align-items: center;'>
+                            <div style='font-size: 1.15rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif;'>{name}</div>
+                            <span style='background: {act_badge}22; color: {act_badge}; border: 1px solid {act_badge}; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 0.78rem;'>{act_title}</span>
+                        </div>
+                        <div style='font-size: 1.35rem; font-weight: 800; color: #38bdf8; margin: 6px 0; font-family: "JetBrains Mono", monospace;'>₹{price:,.2f}</div>
+                        <div style='color: #94a3b8; font-size: 0.78rem; margin-bottom: 12px;'>AI Confidence: <strong style='color: #f8fafc;'>{score:.1f} / 10.0</strong></div>
+                        
+                        <div style='background: #080b11; border: 1px solid #1e293b; border-radius: 8px; padding: 10px; margin-bottom: 12px;'>
+                            <div style='display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 4px;'>
+                                <span style='color: #94a3b8;'>🎯 Target 1:</span>
+                                <strong style='color: #10b981;'>₹{t1:,.2f} (+{pick['target_1_gain_pct']:.1f}%)</strong>
+                            </div>
+                            <div style='display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 4px;'>
+                                <span style='color: #94a3b8;'>🛑 Safety Stop-Loss:</span>
+                                <strong style='color: #f43f5e;'>₹{sl:,.2f} (-{pick['stop_loss_pct']:.1f}%)</strong>
+                            </div>
+                            <div style='display: flex; justify-content: space-between; font-size: 0.82rem;'>
+                                <span style='color: #94a3b8;'>⚖️ Risk-Reward:</span>
+                                <strong style='color: #38bdf8;'>{pick['risk_reward']}</strong>
+                            </div>
+                        </div>
+                        
+                        <div style='font-size: 0.80rem; color: #cbd5e1; line-height: 1.35; margin-bottom: 14px;'>
+                            💡 <em>{reason}</em>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                trade_budget = 25000.0
+                qty_to_trade = max(1, int(trade_budget / price))
+                
+                if st.button(f"🚀 1-Click Buy {name} (₹{price*qty_to_trade:,.0f})", key=f"premarket_trade_btn_{sym}", type="primary", use_container_width=True):
+                    proposal = {
+                        "symbol": sym,
+                        "target_asset": sym,
+                        "action": "BUY_STOCK" if "BUY" in action else "SELL_STOCK",
+                        "confidence_score": score,
+                        "entry_price": price,
+                        "sl": sl,
+                        "target_1": t1,
+                        "horizon": "intraday",
+                        "notes": f"Pre-Market Morning Pick ({reason[:40]})"
+                    }
+                    p_state = get_portfolio_state()
+                    guard = AIGuardrails(min_confidence_threshold=7.0)
+                    approved, g_reason, sanitized_order = guard.evaluate_proposal(proposal, p_state, enforce_time_cutoff=False)
+                    
+                    if approved:
+                        order_res = broker_instance.place_order(
+                            symbol=sym,
+                            side="BUY" if "BUY" in action else "SELL",
+                            quantity=qty_to_trade,
+                            price=price,
+                            sl=sl,
+                            tp=t1,
+                            strategy_name="PreMarket_Morning_Pick"
+                        )
+                        if order_res.get("status") in ["FILLED", "SUCCESS"]:
+                            st.success(f"✅ Trade Filled! Bought {qty_to_trade} shares of {name} @ ₹{price:.2f}. Safety SL set @ ₹{sl:.2f}.")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Order Rejected by Broker: {order_res.get('message')}")
+                    else:
+                        st.error(f"🛡️ Guardrail Protected: {g_reason}")
+
+    st.markdown("<div style='height: 16px;'></div>", unsafe_allow_html=True)
+    with st.expander("📊 **Pre-Market Movers (Top Gap-Up & Gap-Down Stocks)**", expanded=False):
+        m_col1, m_col2 = st.columns(2)
+        with m_col1:
+            st.markdown("#### 🔺 Top Morning Gap-Up Stocks")
+            if gap_ups:
+                df_gu = pd.DataFrame(gap_ups)
+                st.dataframe(df_gu[["name", "price", "gap_pct"]], use_container_width=True, hide_index=True)
+            else:
+                st.info("No significant morning gap-up stocks (> +0.8%) detected today.")
+                
+        with m_col2:
+            st.markdown("#### 🔻 Top Morning Gap-Down Stocks")
+            if gap_downs:
+                df_gd = pd.DataFrame(gap_downs)
+                st.dataframe(df_gd[["name", "price", "gap_pct"]], use_container_width=True, hide_index=True)
+            else:
+                st.info("No significant morning gap-down stocks (< -0.8%) detected today.")
+
+    with st.expander("📘 **How the Indian Stock Market Opens (Simple 3-Minute Guide)**", expanded=False):
+        st.markdown("""
+        * **09:00 AM – 09:08 AM (Order Collection)**: *You and institutional investors can place buy and sell orders. No trades are executed yet, but the exchange collects all bids to discover fair opening prices.*
+        * **09:08 AM – 09:15 AM (Price Matching & Discovery)**: *The exchange algorithm matches all buy and sell orders at a single equilibrium price (Pre-Open Price). Orders cannot be placed or canceled in this 7-minute window.*
+        * **09:15 AM – 03:30 PM (Live Normal Trading)**: *Regular continuous trading starts across NSE and BSE. High-momentum breakout trades usually offer the best returns in the first 45 minutes (09:15 AM - 10:00 AM).*
+        """)
+
+# -------------------------------------------------------------
+# Plain-English AI Chat Assistant Tab Helper
+# -------------------------------------------------------------
+def render_chat_assistant_tab(broker_instance):
+    st.markdown("""
+    <div style='margin-bottom: 8px;'>
+        <h2 style='margin: 0; font-family: "Outfit", sans-serif;'>🗣️ Talk to Your ApexTrade AI Bot</h2>
+        <div style='color: #94a3b8; font-size: 0.92rem; margin-top: 4px;'>
+            Ask anything in plain English — analyze stocks, check market sentiment, get top picks, and execute safe bracket trades.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    saved_ai = load_ai_settings()
+    has_llm = saved_ai.get("is_connected") and saved_ai.get("api_key")
+    
+    if has_llm:
+        st.markdown(f"""
+        <div style='background: #111622; border: 1px solid #10b981; border-radius: 8px; padding: 8px 14px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;'>
+            <span style='color: #10b981; font-weight: 700; font-size: 0.88rem;'><span class='ambient-dot-green'></span>AI BRAIN ACTIVE: {saved_ai['provider'].upper()} ({saved_ai.get('model', 'gemini-3.1-flash-lite')})</span>
+            <span class='badge-bull'>GUARDRAILS ENGAGED</span>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div style='background: #111622; border: 1px solid #f59e0b; border-radius: 8px; padding: 8px 14px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;'>
+            <span style='color: #f59e0b; font-weight: 700; font-size: 0.88rem;'>⚡ LOCAL HEURISTIC MODE (Deterministic Rule Engine & Zero Hallucinations)</span>
+            <span class='badge-neutral'>CONNECT API IN SETTINGS FOR LLM</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    if "chat_messages" not in st.session_state:
+        st.session_state.chat_messages = [
+            {
+                "role": "assistant",
+                "content": "👋 **Hello! I am your ApexTrade AI Assistant.**\n\nI can analyze Indian stocks, check live pre-market sentiment, find today's top picks, or propose safe trades with automatic stop-loss.\n\n*Try one of the quick suggestions below or type your question!*",
+                "action_card": None,
+                "timestamp": get_ist_now().strftime("%I:%M %p")
+            }
+        ]
+
+    st.markdown("<div style='font-size: 0.80rem; color: #94a3b8; font-weight: 700; text-transform: uppercase; margin-bottom: 6px;'>💡 Quick Ideas:</div>", unsafe_allow_html=True)
+    q_c1, q_c2, q_c3, q_c4, q_c5 = st.columns(5)
+    selected_quick_query = None
+    with q_c1:
+        if st.button("🌅 What is NIFTY doing?", use_container_width=True):
+            selected_quick_query = "What is the market opening mood today?"
+    with q_c2:
+        if st.button("🌟 Top 3 Intraday Picks", use_container_width=True):
+            selected_quick_query = "Show me the best 3 stocks to buy today"
+    with q_c3:
+        if st.button("📊 Analyze Tata Motors", use_container_width=True):
+            selected_quick_query = "How is Tata Motors looking for intraday?"
+    with q_c4:
+        if st.button("💼 My Profit & Balance", use_container_width=True):
+            selected_quick_query = "What is my account balance and profit today?"
+    with q_c5:
+        if st.button("🚀 Buy ₹25,000 Reliance", use_container_width=True):
+            selected_quick_query = "Buy ₹25,000 of Reliance with safety stop-loss"
+
+    # Chat Display Container
+    for msg_idx, msg in enumerate(st.session_state.chat_messages):
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            
+            if msg.get("action_card"):
+                card = msg["action_card"]
+                sym = card["symbol"]
+                name = card["display_name"]
+                action = card["action"]
+                qty = card["quantity"]
+                entry_p = card["entry_price"]
+                cap = card["capital_required"]
+                t1 = card["target_1_price"]
+                t1_prof = card["target_1_profit"]
+                sl = card["stop_loss_price"]
+                sl_risk = card["stop_loss_risk"]
+                score = card["score"]
+                act_badge = "#10b981" if action == "BUY" else "#f43f5e"
+
+                st.markdown(f"""
+                <div style='background: #111622; border: 2px solid {act_badge}; border-radius: 10px; padding: 16px; margin: 12px 0;'>
+                    <div style='display: flex; justify-content: space-between; align-items: center;'>
+                        <div style='font-size: 1.15rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif;'>{name}</div>
+                        <span style='background: {act_badge}22; color: {act_badge}; border: 1px solid {act_badge}; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 0.78rem;'>{action} &bull; {card["product_type"]}</span>
+                    </div>
+                    <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; font-size: 0.85rem;'>
+                        <div>📦 Quantity: <strong style='color: #f8fafc;'>{qty} Shares</strong></div>
+                        <div>💵 Capital Required: <strong style='color: #f8fafc;'>₹{cap:,.2f}</strong></div>
+                        <div>🎯 Target 1: <strong style='color: #10b981;'>₹{t1:,.2f} (+₹{t1_prof:,.2f})</strong></div>
+                        <div>🛑 Safety SL: <strong style='color: #f43f5e;'>₹{sl:,.2f} (-₹{sl_risk:,.2f})</strong></div>
+                    </div>
+                    <div style='color: #94a3b8; font-size: 0.78rem;'>AI Mathematical Score: <strong style='color: #f8fafc;'>{score:.1f} / 10.0</strong> &bull; Zero-Bypass Guardrails Engaged</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                btn_key = f"chat_trade_btn_{sym}_{msg_idx}"
+                if st.button(f"🚀 Confirm & Place {action} Order (₹{cap:,.0f})", key=btn_key, type="primary", use_container_width=True):
+                    proposal = {
+                        "symbol": sym,
+                        "target_asset": sym,
+                        "action": "BUY_STOCK" if action == "BUY" else "SELL_STOCK",
+                        "confidence_score": score,
+                        "entry_price": entry_p,
+                        "sl": sl,
+                        "target_1": t1,
+                        "horizon": "intraday",
+                        "notes": f"Chat Order for {name}"
+                    }
+                    
+                    p_state = get_portfolio_state()
+                    guard = AIGuardrails(min_confidence_threshold=7.0)
+                    approved, g_reason, sanitized_order = guard.evaluate_proposal(proposal, p_state, enforce_time_cutoff=True)
+                    
+                    if approved:
+                        order_res = broker_instance.place_order(
+                            symbol=sym,
+                            side=action,
+                            quantity=qty,
+                            price=entry_p,
+                            sl=sl,
+                            tp=t1,
+                            strategy_name="Chat_Assistant_Order"
+                        )
+                        if order_res.get("status") in ["FILLED", "SUCCESS"]:
+                            st.success(f"✅ Order Executed! Bought {qty} shares of {name} @ ₹{entry_p:,.2f}. Safety SL set @ ₹{sl:,.2f}.")
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Order Failed: {order_res.get('message')}")
+                    else:
+                        st.error(f"🛡️ Guardrail Protected: {g_reason}")
+
+    user_input = st.chat_input("Ask me anything about Indian stocks, Nifty, or say 'Buy ₹25,000 of Tata Motors'...")
+    final_query = selected_quick_query or user_input
+
+    if final_query:
+        st.session_state.chat_messages.append({
+            "role": "user",
+            "content": final_query,
+            "action_card": None,
+            "timestamp": get_ist_now().strftime("%I:%M %p")
+        })
+
+        with st.spinner("ApexTrade AI is analyzing market data..."):
+            res = TradingChatAssistant.process_query(
+                user_query=final_query,
+                chat_history=[{"role": m["role"], "content": m["content"]} for m in st.session_state.chat_messages[-6:]],
+                provider=saved_ai.get("provider", "gemini"),
+                api_key=saved_ai.get("api_key"),
+                model=saved_ai.get("model")
+            )
+            
+            st.session_state.chat_messages.append({
+                "role": "assistant",
+                "content": res["response_text"],
+                "action_card": res.get("action_card"),
+                "timestamp": res.get("timestamp", get_ist_now().strftime("%I:%M %p"))
+            })
+            st.rerun()
+
+# -------------------------------------------------------------
+# TAB DISPATCHING
+# -------------------------------------------------------------
+if active_tab == "🗣️ Talk to Your AI Bot (Chat & Voice)":
+    render_chat_assistant_tab(broker)
+
+elif active_tab == "🌅 Pre-Market & Best Stocks Today":
+    render_pre_market_tab(broker)
+
+# -------------------------------------------------------------
 # TAB 0: 🤖 Autonomous AI Trading Agent (Claude / Kimi / Zerodha)
 # -------------------------------------------------------------
-if active_tab == "🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)":
+elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "🤖 AI Auto-Pilot (Automated Safe Trading)"]:
     st.markdown("""
     <div style='display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;'>
         <h2 style='margin: 0;'>🤖 Autonomous AI Trading Agent <span style='font-size: 1rem; color: #818cf8; font-weight: 600;'>(LLM Decision Engine + Zerodha F&O)</span></h2>
@@ -1040,6 +1408,99 @@ if active_tab == "🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)":
         st.metric("Orders Filled", f"{d_status['orders_executed']}")
 
     # Section 6: Smart Active Positions (50/50 Profit Booker & Trailing SL Visualizer)
+    st.markdown("---")
+    st.subheader("🧠 Multi-Agent AI Strategy Council & Autonomous Market Hunter")
+    st.caption("3 specialized orthogonal AI agents evaluate candidate breakouts with 2-stage gating and software-managed OCO execution (entry + standalone exchange SL-M order).")
+    
+    with st.expander("🏛️ **Live 3-Agent Council Audit & Deliberation Console**", expanded=True):
+        c_sym = st.selectbox(
+            "Select Indian Stock for Multi-Agent Deliberation:",
+            options=[item["symbol"] for item in config.DEFAULT_WATCHLIST],
+            format_func=lambda s: next((f"{item['name']} ({item['symbol'].replace('.NS','')})" for item in config.DEFAULT_WATCHLIST if item["symbol"] == s), s),
+            key="council_sym_select"
+        )
+        
+        if st.button("🔍 Run 3-Agent Council Deliberation Audit", type="primary", use_container_width=True):
+            with st.spinner(f"Convening 3-Agent Strategy Council for {c_sym}..."):
+                df_c = get_historical_data(c_sym, period="5d", interval="5m")
+                quote_c = get_live_quote(c_sym)
+                c_res = MultiAgentCouncil.evaluate_candidate(c_sym, df_c, quote_c)
+                st.session_state["last_council_audit"] = c_res
+                
+        if "last_council_audit" in st.session_state:
+            c_res = st.session_state["last_council_audit"]
+            m_score = c_res.get("math_score", 0.0)
+            c_score = c_res.get("consensus_score", 0.0)
+            c_app = c_res.get("consensus_approved", False)
+            verdict = c_res.get("verdict", "N/A")
+            agents = c_res.get("agents", {})
+            
+            banner_col = "#10b981" if c_app else "#f43f5e"
+            st.markdown(f"""
+            <div style='background: #111622; border: 2px solid {banner_col}; border-radius: 10px; padding: 14px 18px; margin: 12px 0;'>
+                <div style='display: flex; justify-content: space-between; align-items: center;'>
+                    <span style='font-size: 1.15rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif;'>{c_res.get('display_name')} &bull; ₹{c_res.get('current_price', 0.0):,.2f}</span>
+                    <span class='{"badge-bull" if c_app else "badge-bear"}'>{verdict} &bull; {c_score:.1f}/10</span>
+                </div>
+                <div style='color: #94a3b8; font-size: 0.88rem; margin-top: 4px;'>Stage 1 Math Pre-Filter: <strong style='color: #f8fafc;'>{m_score:.1f}/10</strong> ({'PASSED' if c_res.get('passed_prefilter') else 'BLOCKED'}) &bull; {c_res.get('deliberation_summary')}</div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            if agents:
+                a1 = agents.get("agent_1_pattern", {})
+                a2 = agents.get("agent_2_defense", {})
+                a3 = agents.get("agent_3_macro", {})
+                
+                col_a1, col_a2, col_a3 = st.columns(3)
+                with col_a1:
+                    st.markdown(f"""
+                    <div style='background: #1e293b55; border: 1px solid #38bdf8; border-radius: 8px; padding: 12px; min-height: 150px;'>
+                        <div style='font-weight: 700; color: #38bdf8; font-size: 0.95rem;'>{a1.get('name')}</div>
+                        <div style='font-size: 1.3rem; font-weight: 800; color: #f8fafc; margin: 4px 0;'>{a1.get('score', 0):.1f} <span style='font-size: 0.8rem; color: #94a3b8;'>({a1.get('vote')})</span></div>
+                        <div style='color: #cbd5e1; font-size: 0.82rem;'>{a1.get('thesis')}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_a2:
+                    st.markdown(f"""
+                    <div style='background: #1e293b55; border: 1px solid {"#f43f5e" if a2.get("veto") else "#10b981"}; border-radius: 8px; padding: 12px; min-height: 150px;'>
+                        <div style='font-weight: 700; color: {"#f43f5e" if a2.get("veto") else "#10b981"}; font-size: 0.95rem;'>{a2.get('name')}</div>
+                        <div style='font-size: 1.3rem; font-weight: 800; color: #f8fafc; margin: 4px 0;'>{a2.get('score', 0):.1f} <span style='font-size: 0.8rem; color: #94a3b8;'>({a2.get('vote')})</span></div>
+                        <div style='color: #cbd5e1; font-size: 0.82rem;'>{a2.get('defense_notes')}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_a3:
+                    st.markdown(f"""
+                    <div style='background: #1e293b55; border: 1px solid #a855f7; border-radius: 8px; padding: 12px; min-height: 150px;'>
+                        <div style='font-weight: 700; color: #a855f7; font-size: 0.95rem;'>{a3.get('name')}</div>
+                        <div style='font-size: 1.3rem; font-weight: 800; color: #f8fafc; margin: 4px 0;'>{a3.get('score', 0):.1f} <span style='font-size: 0.8rem; color: #94a3b8;'>({a3.get('vote')})</span></div>
+                        <div style='color: #cbd5e1; font-size: 0.82rem;'>{a3.get('thesis')}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+    hunter_status = MarketHunterDaemon.get_status()
+    h_col1, h_col2, h_col3, h_col4 = st.columns([2, 1.5, 1.5, 1.5])
+    with h_col1:
+        if hunter_status["is_running"]:
+            if st.button("⏹️ Stop Market Hunter Daemon", type="secondary", use_container_width=True):
+                MarketHunterDaemon.stop()
+                st.rerun()
+        else:
+            if st.button("⚡ Start Autonomous Market Hunter (30s Loop)", type="primary", use_container_width=True):
+                MarketHunterDaemon.start(active_ai_broker, scan_interval_sec=30)
+                st.rerun()
+    with h_col2:
+        st.metric("Hunter Engine", "🟢 HUNTING" if hunter_status["is_running"] else "⏸️ STOPPED")
+    with h_col3:
+        st.metric("30s Scans Run", f"{hunter_status['scans_completed']}")
+    with h_col4:
+        st.metric("Trades Executed", f"{hunter_status['trades_placed_today']}")
+
+    if hunter_status["logs"]:
+        with st.expander(f"📜 **Live Hunter Activity Stream ({len(hunter_status['logs'])} events)**", expanded=False):
+            for l in hunter_status["logs"][:15]:
+                st.markdown(f"**`{l['timestamp']}`** &bull; `[{l['type']}]` {l['message']}")
+
+    st.markdown("---")
     st.markdown("### 📌 Active AI Open Positions & Trailing SL Manager")
     
     pos_btn_c1, pos_btn_c2 = st.columns([3, 1.5])
@@ -1236,9 +1697,217 @@ if active_tab == "🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)":
                 st.info("No decision records in calibration journal yet.")
 
 # -------------------------------------------------------------
+# TAB 0.5: ⚡ NFO Options Greeks & OI Matrix
+# -------------------------------------------------------------
+elif active_tab == "⚡ NFO Options Greeks & OI Matrix":
+    st.markdown("""
+    <h2>⚡ NFO Options Greeks & Open Interest Matrix</h2>
+    <div style='color: #94a3b8; font-size: 0.9rem; margin-bottom: 14px;'>
+        European Black-Scholes Greeks Engine with Implied Volatility (IV), Max Pain, Put-Call Ratio (PCR), and Gamma-Aware Strike Selection.
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # 1. Top Controls Bar
+    oc_col1, oc_col2, oc_col3 = st.columns([2, 1.5, 1.5])
+    with oc_col1:
+        opt_sym = st.selectbox(
+            "Select Underlying Instrument:",
+            ["NIFTY", "BANKNIFTY", "FINNIFTY", "RELIANCE", "HDFCBANK", "TCS", "INFY", "TATAMOTORS"],
+            index=0
+        )
+    with oc_col2:
+        opt_dte = st.slider("Days to Expiry (DTE):", min_value=0.1, max_value=14.0, value=3.0, step=0.1, help="0.1 to 0.5 represents 0DTE / same-day expiry.")
+    with oc_col3:
+        opt_iv = st.slider("Base IV (%):", min_value=5.0, max_value=60.0, value=15.5, step=0.5, help="Implied Volatility parameter.")
+        
+    with st.spinner(f"Computing real-time European Black-Scholes Greeks for {opt_sym}..."):
+        from src.data.data_fetcher import get_live_quote
+        from src.strategies.options_greeks import OptionChainBuilder, SmartStrikeSelector
+        
+        quote = get_live_quote(opt_sym)
+        spot_p = float(quote.get("price", 24650.0 if "NIFTY" in opt_sym else (51200.0 if "BANKNIFTY" in opt_sym else 1000.0)))
+        
+        chain_data = OptionChainBuilder.build_option_chain_matrix(
+            symbol=opt_sym,
+            spot_price=spot_p,
+            dte_days=opt_dte,
+            strikes_count=11,
+            base_iv=opt_iv / 100.0
+        )
+        
+    # 2. Key Telemetry KPI Cards
+    kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
+    pcr_val = chain_data["pcr"]["pcr_oi"]
+    pcr_color = "#10b981" if pcr_val >= 1.15 else ("#f43f5e" if pcr_val <= 0.85 else "#f59e0b")
+    pcr_bias = "Bullish Writer Bias" if pcr_val >= 1.15 else ("Bearish Writer Bias" if pcr_val <= 0.85 else "Neutral / Balanced")
+    
+    mp_strike = chain_data["max_pain"]
+    mp_diff = spot_p - mp_strike
+    
+    with kpi_col1:
+        st.metric("Spot Price", f"₹{spot_p:,.2f}", f"{quote.get('change_pct', 0.0):+.2f}%")
+    with kpi_col2:
+        st.metric("Put-Call Ratio (PCR)", f"{pcr_val:.2f}", pcr_bias)
+    with kpi_col3:
+        st.metric("Max Pain Strike", f"₹{mp_strike:,.0f}", f"{mp_diff:+.0f} pts from Spot")
+    with kpi_col4:
+        st.metric("ATM Implied Volatility", f"{opt_iv:.1f}%", f"DTE: {opt_dte:.1f}d")
+        
+    st.markdown("---")
+    
+    # 3. Interactive Symmetrical Option Chain Matrix
+    st.markdown("### 📊 Live Symmetrical Option Chain Matrix")
+    st.markdown("<div style='color: #94a3b8; font-size: 0.82rem; margin-bottom: 8px;'>Theoretical European pricing & Greeks. Highlights ATM and In-The-Money strikes.</div>", unsafe_allow_html=True)
+    
+    table_rows = []
+    for s in chain_data["strikes"]:
+        k = s["strike"]
+        is_atm = s["is_atm"]
+        ce = s["ce"]
+        pe = s["pe"]
+        
+        table_rows.append({
+            "CE Delta (Δ)": f"{ce['delta']:+.3f}",
+            "CE Gamma (Γ)": f"{ce['gamma']:.5f}",
+            "CE Theta (₹/d)": f"{ce['theta']:+.2f}",
+            "CE IV": f"{ce['iv_pct']:.1f}%",
+            "CE LTP (₹)": f"₹{ce['ltp']:.2f}",
+            "CE Open Int": f"{ce['oi']:,}",
+            "STRIKE": f"🎯 {k}" if is_atm else f"{k}",
+            "PE Open Int": f"{pe['oi']:,}",
+            "PE LTP (₹)": f"₹{pe['ltp']:.2f}",
+            "PE IV": f"{pe['iv_pct']:.1f}%",
+            "PE Theta (₹/d)": f"{pe['theta']:+.2f}",
+            "PE Gamma (Γ)": f"{pe['gamma']:.5f}",
+            "PE Delta (Δ)": f"{pe['delta']:+.3f}"
+        })
+        
+    df_chain = pd.DataFrame(table_rows)
+    st.dataframe(df_chain, use_container_width=True, hide_index=True)
+    
+    st.markdown("---")
+    
+    # 4. Smart Strike Selector & Guardrail-Routed Execution
+    st.markdown("### 🎯 Gamma-Aware Smart Strike Selector & 1-Click Execution")
+    
+    sc1, sc2 = st.columns([1.5, 2])
+    with sc1:
+        trade_intent = st.radio("Strategic Direction:", ["🟢 Bullish (Buy Call)", "🔴 Bearish (Buy Put)"], horizontal=True)
+        strike_pref = st.selectbox("Strike Mode:", ["ATM (At-The-Money, Δ ≈ 0.50)", "ITM1 (In-The-Money, Δ ≥ 0.65)", "OTM1 (Out-of-The-Money, Δ ≈ 0.35)"])
+        pref_code = "ATM" if "ATM" in strike_pref else ("ITM1" if "ITM1" in strike_pref else "OTM1")
+        
+        action_code = "BUY_CALL" if "Bullish" in trade_intent else "BUY_PUT"
+        smart_pick = SmartStrikeSelector.select_optimal_strike(
+            symbol=opt_sym,
+            spot_price=spot_p,
+            action=action_code,
+            dte_days=opt_dte,
+            preference=pref_code
+        )
+        
+        default_qty = 25 if "NIFTY" in opt_sym else (15 if "BANK" in opt_sym else 10)
+        lots_qty = st.number_input(f"Quantity (Shares / Contracts):", min_value=1, value=default_qty, step=default_qty)
+        
+    with sc2:
+        st.markdown(f"""
+        <div style='background: #111622; border: 1px solid #334155; border-radius: 10px; padding: 16px;'>
+            <div style='font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; font-weight: 700;'>Selected Contract Blueprint</div>
+            <div style='font-size: 1.4rem; font-weight: 800; color: #38bdf8; margin: 4px 0; font-family: "Outfit", sans-serif;'>{smart_pick["contract"]}</div>
+            <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; font-size: 0.85rem;'>
+                <div>Estimated LTP: <strong style='color: #f8fafc;'>₹{smart_pick["estimated_ltp"]:.2f}</strong></div>
+                <div>Target Delta (Δ): <strong style='color: #f8fafc;'>{smart_pick["greeks"]["delta"]:+.3f}</strong></div>
+                <div>Daily Theta (Θ): <strong style='color: #f43f5e;'>{smart_pick["greeks"]["theta_daily"]:+.2f} ₹/day</strong></div>
+                <div>Gamma (Γ): <strong style='color: #f8fafc;'>{smart_pick["greeks"]["gamma"]:.5f}</strong></div>
+            </div>
+            {"<div style='margin-top: 8px; color: #f59e0b; font-size: 0.78rem; font-weight: 700;'>⚠️ 0DTE Expiry-Day Safety: Automatically shifted to ITM1 to suppress extreme gamma whips.</div>" if smart_pick["is_0dte_adjusted"] else ""}
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Interactive Analytical Payoff Curve
+        payoff_data = SmartStrikeSelector.calculate_payoff_curve(
+            spot_price=spot_p,
+            strike=smart_pick["strike"],
+            premium=smart_pick["estimated_ltp"],
+            action=action_code,
+            quantity=int(lots_qty)
+        )
+        
+        fig_payoff = go.Figure()
+        fig_payoff.add_trace(go.Scatter(
+            x=payoff_data["underlying_prices"],
+            y=payoff_data["pnl_at_expiry"],
+            mode="lines",
+            line=dict(color="#38bdf8", width=2.5),
+            name="P&L at Expiry"
+        ))
+        fig_payoff.add_hline(y=0, line_dash="dash", line_color="#94a3b8", line_width=1)
+        fig_payoff.add_vline(x=spot_p, line_dash="dot", line_color="#f59e0b", line_width=1.5, annotation_text=f"Spot ₹{spot_p:,.1f}", annotation_position="top left")
+        fig_payoff.add_vline(x=payoff_data["breakeven"], line_dash="dash", line_color="#10b981", line_width=1.5, annotation_text=f"BE ₹{payoff_data['breakeven']:,.1f}", annotation_position="top right")
+        
+        fig_payoff.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="#111622",
+            plot_bgcolor="#080b11",
+            height=220,
+            margin=dict(l=20, r=20, t=25, b=20),
+            title=dict(text=f"📈 Payoff at Expiry (Breakeven: ₹{payoff_data['breakeven']:.1f} | Max Loss: ₹{payoff_data['max_loss']:,.0f})", font=dict(size=12, color="#94a3b8")),
+            xaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)"),
+            yaxis=dict(showgrid=True, gridcolor="rgba(255,255,255,0.05)")
+        )
+        st.plotly_chart(fig_payoff, use_container_width=True)
+        
+        st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
+        
+        # 1-Click Guardrail-Routed Execution Button
+        if st.button(f"🚀 Execute 1-Click {action_code} via Guardrails", type="primary", use_container_width=True):
+            entry_p = smart_pick["estimated_ltp"]
+            sl_p = round(entry_p * 0.80, 2) # Standard 20% option SL
+            t1_p = round(entry_p * 1.30, 2) # Target 1 (+30%)
+            t2_p = round(entry_p * 1.60, 2) # Target 2 (+60%)
+            
+            proposal = {
+                "symbol": smart_pick["contract"],
+                "target_asset": smart_pick["contract"],
+                "action": "BUY_STOCK",
+                "confidence_score": 8.5,
+                "entry_price": entry_p,
+                "sl": sl_p,
+                "target_1": t1_p,
+                "target_2": t2_p,
+                "horizon": "intraday",
+                "notes": f"Options Greeks Matrix execution (Delta: {smart_pick['greeks']['delta']:+.2f})"
+            }
+            
+            # ROUTE STRICTLY THROUGH AI GUARDRAILS
+            from src.engine.ai_guardrails import AIGuardrails
+            from src.utils.storage import get_portfolio_state
+            
+            p_state = get_portfolio_state()
+            guard = AIGuardrails(min_confidence_threshold=7.5)
+            approved, reason, sanitized_order = guard.evaluate_proposal(proposal, p_state, enforce_time_cutoff=False)
+            
+            if approved:
+                order_res = broker.place_order(
+                    symbol=smart_pick["contract"],
+                    side="BUY",
+                    quantity=int(lots_qty),
+                    price=entry_p,
+                    sl=sl_p,
+                    tp=t1_p,
+                    strategy_name="Options_Greeks_Matrix"
+                )
+                if order_res.get("status") in ["FILLED", "SUCCESS"]:
+                    st.success(f"✅ Guardrail Approved & Filled! Bought {lots_qty} {smart_pick['contract']} @ ₹{order_res.get('price', entry_p):.2f}")
+                    st.rerun()
+                else:
+                    st.error(f"❌ Order Rejected by Broker: {order_res.get('message')}")
+            else:
+                st.error(f"🛡️ Guardrail Blocked Execution: {reason}")
+
+# -------------------------------------------------------------
 # TAB 1: 🎯 Smart Stock Advisor & Trade Planner
 # -------------------------------------------------------------
-elif active_tab == "🎯 Smart Stock Advisor (When to Buy/Sell)":
+elif active_tab in ["🎯 Smart Stock Advisor (When to Buy/Sell)", "🎯 Easy Stock Advisor (Buy / Sell Advice)"]:
     st.markdown("""
     <h2>🎯 Smart Stock Advisor & Trade Planner</h2>
     <div style='color: #94a3b8; font-size: 0.9rem; margin-bottom: 14px;'>Get instant, actionable recommendations: <strong>When to Buy/Sell</strong>, <strong>Exact Price Targets</strong>, <strong>Safety Stop-Loss</strong>, and <strong>How Long to Hold</strong>.</div>
@@ -1355,7 +2024,20 @@ elif active_tab == "🎯 Smart Stock Advisor (When to Buy/Sell)":
             </div>
         </div>
         """, unsafe_allow_html=True)
-        
+
+        # Structural Pivot Levels Strip
+        if analysis.get("pivots"):
+            piv = analysis["pivots"]
+            st.markdown(f"""
+            <div style='background: #0f172a; border: 1px solid #1e293b; border-radius: 8px; padding: 8px 14px; margin: 10px 0; display: flex; justify-content: space-between; font-size: 0.80rem; font-family: "JetBrains Mono", monospace;'>
+                <div><span style='color: #94a3b8;'>S2:</span> <strong style='color: #f43f5e;'>₹{piv.get('s2', 0):,.2f}</strong></div>
+                <div><span style='color: #94a3b8;'>S1:</span> <strong style='color: #fca5a5;'>₹{piv.get('s1', 0):,.2f}</strong></div>
+                <div><span style='color: #38bdf8;'>PIVOT:</span> <strong style='color: #38bdf8;'>₹{piv.get('pivot', 0):,.2f}</strong></div>
+                <div><span style='color: #94a3b8;'>R1:</span> <strong style='color: #86efac;'>₹{piv.get('r1', 0):,.2f}</strong></div>
+                <div><span style='color: #94a3b8;'>R2:</span> <strong style='color: #22c55e;'>₹{piv.get('r2', 0):,.2f}</strong></div>
+            </div>
+            """, unsafe_allow_html=True)
+            
         st.markdown("### 📋 The Trade Blueprint (Exact Numbers)")
         b1, b2, b3, b4 = st.columns(4)
         
@@ -1397,6 +2079,10 @@ elif active_tab == "🎯 Smart Stock Advisor (When to Buy/Sell)":
                     fig_adv.add_trace(go.Scatter(x=adv_chart_df.index, y=adv_chart_df["EMA_21"], name="21 EMA", line=dict(color="#f59e0b", width=1.2)), row=1, col=1)
                 if "EMA_50" in adv_chart_df.columns:
                     fig_adv.add_trace(go.Scatter(x=adv_chart_df.index, y=adv_chart_df["EMA_50"], name="50 EMA", line=dict(color="#a855f7", width=1.2)), row=1, col=1)
+                if "VWAP" in adv_chart_df.columns:
+                    fig_adv.add_trace(go.Scatter(x=adv_chart_df.index, y=adv_chart_df["VWAP"], name="VWAP", line=dict(color="#e2e8f0", width=1.5, dash="dot")), row=1, col=1)
+                if "Supertrend" in adv_chart_df.columns:
+                    fig_adv.add_trace(go.Scatter(x=adv_chart_df.index, y=adv_chart_df["Supertrend"], name="SuperTrend", line=dict(color="#10b981", width=1.2, dash="dash")), row=1, col=1)
                     
                 # Stop-Loss Horizontal Overlay
                 fig_adv.add_hline(
@@ -2079,9 +2765,105 @@ elif active_tab == "🔍 Indian Market Screener (Scan All Stocks)":
                 st.warning("No data returned for selected sector.")
 
 # -------------------------------------------------------------
+# TAB: 📦 My Trades & Daily Profit Book
+# -------------------------------------------------------------
+elif active_tab == "📦 My Trades & Profit Book":
+    st.markdown("""
+    <div style='margin-bottom: 12px;'>
+        <h2 style='margin: 0; font-family: "Outfit", sans-serif;'>📦 My Trades & Daily Profit Book</h2>
+        <div style='color: #94a3b8; font-size: 0.9rem; margin-top: 4px;'>Live overview of your active positions, daily earnings in ₹, and completed trade history.</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    p_state = get_portfolio_state()
+    active_pos = broker.get_open_positions()
+    closed_trades = get_closed_trades()
+    
+    # Financial KPI Cards
+    cash_val = float(p_state.get("cash", 100000.0))
+    daily_pnl = float(p_state.get("daily_pnl", 0.0))
+    open_pnl = sum(p.get("unrealized_pnl", 0.0) for p in active_pos)
+    total_equity = cash_val + sum(p.get("entry_price", 0) * p.get("quantity", 0) for p in active_pos) + open_pnl
+    
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("💰 Total Account Equity", format_currency_inr(total_equity))
+    k2.metric("💵 Available Cash", format_currency_inr(cash_val))
+    pnl_sign = "▲ +" if daily_pnl >= 0 else "▼ "
+    k3.metric("📈 Today's Realized Profit", format_currency_inr(daily_pnl), f"{pnl_sign}{daily_pnl:,.2f} ₹", delta_color="normal")
+    open_sign = "▲ +" if open_pnl >= 0 else "▼ "
+    k4.metric("⚡ Live Open Trades P&L", format_currency_inr(open_pnl), f"{open_sign}{open_pnl:,.2f} ₹", delta_color="normal")
+    
+    st.markdown("---")
+    
+    # Active Positions Section
+    st.markdown("### 📌 Active Open Positions")
+    if active_pos:
+        for pos in active_pos:
+            sym = pos["symbol"]
+            qty = int(pos["quantity"])
+            entry_p = float(pos["entry_price"])
+            curr_p = float(pos.get("current_price", entry_p))
+            u_pnl = pos.get("unrealized_pnl", (curr_p - entry_p) * qty)
+            u_pct = pos.get("unrealized_pnl_pct", ((curr_p - entry_p) / entry_p) * 100.0 if entry_p > 0 else 0.0)
+            side = pos["side"].upper()
+            
+            pnl_col = "#10b981" if u_pnl >= 0 else "#f43f5e"
+            pnl_txt = f"+₹{u_pnl:,.2f} (+{u_pct:.2f}%)" if u_pnl >= 0 else f"-₹{abs(u_pnl):,.2f} ({u_pct:.2f}%)"
+            
+            st.markdown(f"""
+            <div style='background: #111622; border: 1.5px solid {pnl_col}; border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;'>
+                <div>
+                    <div style='display: flex; gap: 10px; align-items: center;'>
+                        <strong style='font-size: 1.15rem; color: #f8fafc;'>{display_symbol_name(sym)}</strong>
+                        <span style='background: {"rgba(16,185,129,0.15)" if side == "BUY" else "rgba(244,63,94,0.15)"}; color: {"#10b981" if side == "BUY" else "#f43f5e"}; padding: 2px 8px; border-radius: 4px; font-weight: 700; font-size: 0.75rem;'>{side} {qty} Shares</span>
+                    </div>
+                    <div style='font-size: 0.85rem; color: #94a3b8; margin-top: 4px;'>
+                        Bought @ ₹{entry_p:,.2f} &bull; Current Market Price: <strong style='color: #38bdf8;'>₹{curr_p:,.2f}</strong>
+                    </div>
+                </div>
+                <div style='text-align: right; display: flex; gap: 18px; align-items: center;'>
+                    <div>
+                        <div style='font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; font-weight: 700;'>Live Profit / Loss</div>
+                        <div style='font-size: 1.25rem; font-weight: 800; color: {pnl_col}; font-family: "JetBrains Mono", monospace;'>{pnl_txt}</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            c_btn_col1, c_btn_col2 = st.columns([4, 1])
+            with c_btn_col2:
+                if st.button(f"🔴 Exit {display_symbol_name(sym)}", key=f"exit_pos_{sym}_{pos.get('id', 0)}", type="secondary", use_container_width=True):
+                    sq_res = broker.close_position(pos.get("id") or sym)
+                    if sq_res.get("status") in ["FILLED", "SUCCESS"]:
+                        st.success(f"Closed {sym} position successfully!")
+                        st.rerun()
+                    else:
+                        st.error(f"Error closing position: {sq_res.get('message')}")
+    else:
+        st.info("💡 You currently have no open active positions. Use the **Pre-Market Picks** or **Stock Advisor** to place safe trades.")
+        
+    st.markdown("---")
+    
+    # Closed Trades History
+    st.markdown("### 📜 Past Completed Trades (Profit History)")
+    if closed_trades:
+        c_df = pd.DataFrame(closed_trades)
+        c_df["Profit / Loss (₹)"] = c_df["pnl"].apply(lambda x: format_currency_inr(x))
+        c_df["Return %"] = c_df["pnl_pct"].apply(lambda x: f"{x:+.2f}%")
+        c_df["Bought @"] = c_df["entry_price"].apply(lambda x: f"₹{x:.2f}")
+        c_df["Sold @"] = c_df["exit_price"].apply(lambda x: f"₹{x:.2f}")
+        c_df["Stock"] = c_df["symbol"].apply(lambda s: display_symbol_name(s))
+        
+        display_cols = ["Stock", "side", "quantity", "Bought @", "Sold @", "Profit / Loss (₹)", "Return %", "exit_reason", "exit_time"]
+        available_cols = [c for c in display_cols if c in c_df.columns]
+        st.dataframe(c_df[available_cols], use_container_width=True, hide_index=True)
+    else:
+        st.info("No completed trades recorded yet today.")
+
+# -------------------------------------------------------------
 # TAB 5: ⚙️ Settings & Risk Controls
 # -------------------------------------------------------------
-elif active_tab == "⚙️ Settings & Risk Controls":
+elif active_tab in ["⚙️ Settings & Risk Controls", "⚙️ Simple Settings & Safety"]:
     st.markdown("""
     <h2>⚙️ Settings, Risk Rules & Broker Connections</h2>
     <div style='color: #94a3b8; font-size: 0.9rem; margin-bottom: 14px;'>Manage your capital, broker connections, and automated safety limits.</div>

@@ -222,6 +222,14 @@ def delete_position(symbol: str):
     conn.commit()
     conn.close()
 
+def clear_all_positions():
+    """Clears all open positions from database."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM positions")
+    conn.commit()
+    conn.close()
+
 def log_closed_trade(trade: dict):
     conn = get_connection()
     cursor = conn.cursor()

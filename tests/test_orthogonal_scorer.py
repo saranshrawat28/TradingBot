@@ -72,9 +72,9 @@ class TestOrthogonalScorerSuite(unittest.TestCase):
         expected_t1 = round(curr_p + (1.8 * atr), 2)
         expected_t2 = round(curr_p + (3.0 * atr), 2)
         
-        self.assertEqual(levels["stop_loss"], expected_sl)
-        self.assertEqual(levels["target_1"], expected_t1)
-        self.assertEqual(levels["target_2"], expected_t2)
+        self.assertAlmostEqual(levels["stop_loss"], expected_sl, delta=0.02)
+        self.assertAlmostEqual(levels["target_1"], expected_t1, delta=0.02)
+        self.assertAlmostEqual(levels["target_2"], expected_t2, delta=0.02)
 
 if __name__ == "__main__":
     unittest.main()

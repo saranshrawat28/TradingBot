@@ -68,13 +68,18 @@ class SmartTradeManager:
             t1_p = float(pos.get("target_1") or (pos.get("tp") or (entry_p * 1.20)))
             t2_p = float(pos.get("target_2") or (entry_p * 1.45))
             target_1_hit = bool(pos.get("target_1_hit", 0))
+            be_locked = bool(pos.get("breakeven_locked", 0))
             trailing_sl = float(pos.get("trailing_sl") or sl_p)
 
+            # Calculate 1.0R Risk Distance
+            initial_risk_r = max(0.01 * entry_p, abs(entry_p - sl_p))
+
             # -------------------------------------------------------------
-            # STAGE 1: Target 1 Milestone (+15% to +25%) -> Book 50% Profit
+            # STAGE 2: Target 1 Milestone (+1.5R) -> Book 50% Profit & Lock +0.5R
             # -------------------------------------------------------------
             if not target_1_hit and side in ["LONG", "BUY"] and curr_p >= t1_p:
                 close_qty = max(1, qty // 2) if qty > 1 else qty
+                locked_profit_sl = round(entry_p + (0.5 * initial_risk_r), 2)
                 logger.info(f"🎯 Target 1 HIT on {sym}! Booking 50% ({close_qty}/{qty} shares) @ ₹{curr_p:.2f}")
 
                 if hasattr(broker, "partial_close_position"):
@@ -87,18 +92,45 @@ class SmartTradeManager:
                 else:
                     exec_res = broker.square_off_position(sym, reason="Target 1 Full Profit")
 
+                pos["quantity"] = max(1, qty - close_qty)
+                pos["target_1_hit"] = 1
+                pos["breakeven_locked"] = 1
+                pos["stage"] = "BREAKEVEN_LOCKED"
+                pos["sl"] = locked_profit_sl
+                pos["trailing_sl"] = locked_profit_sl
+                save_position(pos)
+
                 action_events.append({
                     "type": "TARGET_1_PROFIT_BOOKED",
                     "symbol": sym,
                     "price": curr_p,
                     "closed_qty": close_qty,
                     "realized_gain_pct": round(gain_pct, 2),
-                    "message": f"Target 1 Hit! Booked 50% profit @ ₹{curr_p:.2f} (+{gain_pct:.1f}%). SL shifted to Breakeven (₹{entry_p:.2f})."
+                    "message": f"Target 1 Hit! Booked 50% profit @ ₹{curr_p:.2f} (+{gain_pct:.1f}%). SL locked to +0.5R (₹{locked_profit_sl:.2f})."
                 })
                 continue
 
             # -------------------------------------------------------------
-            # STAGE 2: Target 2 Milestone (+40% to +60%) -> Full Profit Exit
+            # STAGE 1: +1.0R Milestone -> Move SL to Breakeven (Entry + Fees)
+            # -------------------------------------------------------------
+            elif not be_locked and not target_1_hit and side in ["LONG", "BUY"] and curr_p >= (entry_p + initial_risk_r):
+                breakeven_sl = round(entry_p * 1.002, 2) # Entry + 0.20% fees buffer
+                pos["breakeven_locked"] = 1
+                pos["sl"] = max(sl_p, breakeven_sl)
+                pos["trailing_sl"] = pos["sl"]
+                save_position(pos)
+                logger.info(f"🔒 +1.0R Reached on {sym}! Stop-Loss moved to Breakeven (₹{breakeven_sl:.2f}).")
+                action_events.append({
+                    "type": "BREAKEVEN_LOCKED",
+                    "symbol": sym,
+                    "price": curr_p,
+                    "sl_price": breakeven_sl,
+                    "message": f"🔒 +1.0R Milestone hit! Stop-Loss moved to Breakeven @ ₹{breakeven_sl:.2f} (Downside eliminated)."
+                })
+                continue
+
+            # -------------------------------------------------------------
+            # STAGE 3: Target 2 Milestone (+2.5R) -> Full Exit of Runner
             # -------------------------------------------------------------
             if side in ["LONG", "BUY"] and curr_p >= t2_p:
                 logger.info(f"🏆 Target 2 HIT on {sym}! Full exit @ ₹{curr_p:.2f}")
@@ -114,12 +146,13 @@ class SmartTradeManager:
                 continue
 
             # -------------------------------------------------------------
-            # STAGE 3: Dynamic Trailing Stop-Loss (Runner Phase)
+            # STAGE 4: Dynamic Chandelier Trailing Stop on Runner
             # -------------------------------------------------------------
             if target_1_hit:
-                # Dynamic Trailing SL: Moves up as price makes new highs, but NEVER drops below entry
+                locked_profit_sl = round(entry_p + (0.5 * initial_risk_r), 2)
+                # Dynamic Trailing SL: Moves up as price makes new highs, never drops below +0.5R lock
                 peak_trailing = highest_p * (1.0 - (trailing_buffer_pct / 100.0))
-                new_trailing_sl = max(entry_p, peak_trailing) # Minimum is Breakeven
+                new_trailing_sl = max(locked_profit_sl, peak_trailing)
                 
                 if new_trailing_sl > trailing_sl:
                     pos["trailing_sl"] = round(new_trailing_sl, 2)
@@ -142,20 +175,47 @@ class SmartTradeManager:
                     continue
 
             # -------------------------------------------------------------
-            # STAGE 4: Initial Stop-Loss Protection (Before Target 1)
+            # STAGE 0/1: Safety Stop-Loss Hit (Before Target 1)
             # -------------------------------------------------------------
-            if not target_1_hit and curr_p <= sl_p:
-                logger.warning(f"🛑 Hard Safety Stop-Loss Hit on {sym} @ ₹{curr_p:.2f}")
-                exec_res = broker.square_off_position(sym, reason="Hard Stop-Loss Hit")
+            current_active_sl = float(pos.get("sl", sl_p))
+            if not target_1_hit and curr_p <= current_active_sl:
+                logger.warning(f"🛑 Safety Stop-Loss Hit on {sym} @ ₹{curr_p:.2f}")
+                exec_res = broker.square_off_position(sym, reason="Stop-Loss Hit")
                 action_events.append({
                     "type": "STOP_LOSS_EXIT",
                     "symbol": sym,
                     "price": curr_p,
                     "closed_qty": qty,
                     "realized_gain_pct": round(gain_pct, 2),
-                    "message": f"🛑 Stop-Loss Hit @ ₹{curr_p:.2f} ({gain_pct:.1f}%). Position closed to preserve capital."
+                    "message": f"🛑 Stop-Loss Hit @ ₹{curr_p:.2f} ({gain_pct:.1f}%). Capital preserved."
                 })
                 continue
+
+            # -------------------------------------------------------------
+            # STAGNANT CHOP TIMEOUT CHECK (>45 mins in Chop with <0.25R progress)
+            # -------------------------------------------------------------
+            entry_time_str = pos.get("entry_time")
+            if entry_time_str:
+                try:
+                    entry_dt = datetime.fromisoformat(str(entry_time_str).replace("Z", "+00:00"))
+                    now_dt = datetime.now(timezone.utc) if entry_dt.tzinfo else datetime.now()
+                    elapsed_mins = (now_dt - entry_dt).total_seconds() / 60.0
+                    r_progress = abs(curr_p - entry_p) / initial_risk_r if initial_risk_r > 0 else 0.0
+                    
+                    if elapsed_mins >= 45.0 and r_progress <= 0.25 and not target_1_hit:
+                        logger.info(f"⏳ Stagnant Chop Timeout on {sym} ({elapsed_mins:.0f}m elapsed, progress {r_progress:.2f}R).")
+                        exec_res = broker.square_off_position(sym, reason="Stagnant Chop Timeout (45m Inactivity)")
+                        action_events.append({
+                            "type": "STAGNANT_CHOP_TIMEOUT",
+                            "symbol": sym,
+                            "price": curr_p,
+                            "closed_qty": qty,
+                            "realized_gain_pct": round(gain_pct, 2),
+                            "message": f"⏳ Stagnant Position Exited @ ₹{curr_p:.2f} after {elapsed_mins:.0f}m in consolidation. Capital liberated."
+                        })
+                        continue
+                except Exception as e:
+                    logger.debug(f"Stagnancy time parse skip: {e}")
 
             # Save updated position metrics
             save_position(pos)
