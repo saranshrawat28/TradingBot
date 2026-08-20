@@ -344,7 +344,7 @@ class StockAdvisor:
         elif rs_info.get("status") in ["HEAVY_UNDERPERFORMER", "UNDERPERFORMING"]:
             watchouts.append(f"⚠️ **Lagging Benchmark:** Underperforming NIFTY 50 by {rs_info.get('rs_diff_pct')}%.")
 
-        # Setup Quality Grading & Estimated Win-Rate Probability
+        # Setup Quality Grading & Estimated Win-Rate Probability (Mapped 1:1 to Verdict Bands)
         if final_score >= 8.5 and not vsa_info.get("is_trap") and rs_info.get("rs_ratio", 1.0) >= 1.00:
             setup_grade = "GRADE_A_PLUS"
             setup_grade_title = "🌟 GRADE A+ (Elite Institutional Setup)"
@@ -357,10 +357,14 @@ class StockAdvisor:
             setup_grade = "GRADE_B"
             setup_grade_title = "⏳ GRADE B (Pullback / Accumulation)"
             win_probability = 58
+        elif final_score >= 4.5:
+            setup_grade = "GRADE_C"
+            setup_grade_title = "🟡 GRADE C (Wait / Neutral — Capital Preserved)"
+            win_probability = 48
         else:
-            setup_grade = "GRADE_AVOID"
-            setup_grade_title = "🛑 AVOID / NEUTRAL (Capital Preserved)"
-            win_probability = 42
+            setup_grade = "GRADE_D"
+            setup_grade_title = "🛑 GRADE D (Avoid / Bearish — Capital Protected)"
+            win_probability = 35
 
         return {
             "status": "SUCCESS",

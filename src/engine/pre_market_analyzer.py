@@ -308,16 +308,16 @@ class PreMarketAnalyzer:
                     action_title = "🟢 BUY ON DIP"
                     action_badge = "#22c55e"
                     reason_text = f"Positive upward structure ({win_prob}% Win Probability). Best to enter on minor pullback to value zone."
-                elif score <= 4.0:
-                    action = "SELL"
-                    action_title = "🔴 SELL / SHORT"
-                    action_badge = "#f43f5e"
-                    reason_text = f"Heavy selling pressure observed. Structure is breaking down below session resistance."
-                else:
+                elif score >= 4.5:
                     action = "WAIT"
                     action_title = "🟡 WAIT / WATCH"
                     action_badge = "#f59e0b"
-                    reason_text = f"Stock is moving sideways in a consolidation range. Better to wait for a confirmed breakout."
+                    reason_text = f"Stock is moving sideways in a consolidation range. Capital preserved while waiting for confirmation."
+                else:
+                    action = "SELL"
+                    action_title = "🔴 AVOID / SHORT"
+                    action_badge = "#f43f5e"
+                    reason_text = f"Heavy selling pressure observed. Structure is breaking down below session resistance."
 
                 t1_p = float(t1.get("price", curr_p * 1.025))
                 t2_p = float(t2.get("price", curr_p * 1.045))
