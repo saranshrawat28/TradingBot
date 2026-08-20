@@ -16,7 +16,7 @@ class LLMClient:
     """
     
     SUPPORTED_PROVIDERS = {
-        "gemini": ["gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-flash-latest", "gemini-3.1-pro-preview", "gemma-4-26b-a4b-it"],
+        "gemini": ["gemini-3.7-flash", "gemini-3.5-flash-lite", "gemini-3.1-pro-preview", "gemini-2.5-flash", "gemini-3.1-flash-lite", "gemma-4-26b-a4b-it"],
         "groq": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"],
         "anthropic": ["claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
         "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],

@@ -1261,7 +1261,7 @@ elif active_tab in ["ðŸ¤– Autonomous AI Trading Agent (Claude / Kimi / F&O)", "ð
     saved_prov = saved_ai.get("provider", "gemini")
     
     prov_to_model = {
-        "gemini": "gemini-3.1-flash-lite",
+        "gemini": "gemini-3.7-flash",
         "groq": "llama-3.3-70b-versatile",
         "anthropic": "claude-3-7-sonnet-20250219",
         "openai": "gpt-4o",
@@ -1271,7 +1271,7 @@ elif active_tab in ["ðŸ¤– Autonomous AI Trading Agent (Claude / Kimi / F&O)", "ð
     }
     
     prov_key = saved_prov
-    model_choice = saved_ai.get("model", prov_to_model.get(prov_key, "gemini-3.1-flash-lite"))
+    model_choice = saved_ai.get("model", prov_to_model.get(prov_key, "gemini-3.7-flash"))
     ai_api_key = saved_ai.get("api_key") or os.getenv(f"{prov_key.upper()}_API_KEY", "")
     
     # Initialize Broker & Guardrails with Smart Defaults
