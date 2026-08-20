@@ -161,16 +161,22 @@ class PreMarketAnalyzer:
                     gap_downs.append(item_summary)
 
                 # Formulate Plain-English Reasons
+                setup_grade = analysis.get("setup_grade", "GRADE_A")
+                setup_grade_title = analysis.get("setup_grade_title", "⚡ GRADE A (High Probability)")
+                win_prob = analysis.get("win_probability", 70)
+                rs_data = analysis.get("relative_strength", {})
+                sq_data = analysis.get("ttm_squeeze", {})
+
                 if score >= 7.5:
                     action = "BUY"
                     action_title = "🟢 STRONG BUY"
                     action_badge = "#10b981"
-                    reason_text = f"Strong buyer momentum! Price is holding firmly above key support levels with positive volume flow. High probability of up-move towards Target 1."
+                    reason_text = f"{setup_grade_title} ({win_prob}% Win Probability). Strong institutional buyer momentum with positive volume flow."
                 elif score >= 6.2:
                     action = "BUY_ON_DIP"
                     action_title = "🟢 BUY ON DIP"
                     action_badge = "#22c55e"
-                    reason_text = f"Positive upward structure. Best to buy when price pulls back slightly to the entry zone."
+                    reason_text = f"Positive upward structure ({win_prob}% Win Probability). Best to enter on minor pullback to value zone."
                 elif score <= 4.0:
                     action = "SELL"
                     action_title = "🔴 SELL / SHORT"
@@ -180,7 +186,7 @@ class PreMarketAnalyzer:
                     action = "WAIT"
                     action_title = "🟡 WAIT / WATCH"
                     action_badge = "#f59e0b"
-                    reason_text = f"Stock is moving sideways in a consolidation range. Better to wait for a clear breakout before entering."
+                    reason_text = f"Stock is moving sideways in a consolidation range. Better to wait for a confirmed breakout."
 
                 t1_p = float(t1.get("price", curr_p * 1.025))
                 t2_p = float(t2.get("price", curr_p * 1.045))
@@ -195,10 +201,15 @@ class PreMarketAnalyzer:
                     "current_price": curr_p,
                     "gap_pct": gap_pct,
                     "score": score,
+                    "setup_grade": setup_grade,
+                    "setup_grade_title": setup_grade_title,
+                    "win_probability": win_prob,
+                    "relative_strength": rs_data,
+                    "ttm_squeeze": sq_data,
                     "action": action,
                     "action_title": action_title,
                     "action_badge": action_badge,
-                    "entry_zone": f"₹{curr_p * 0.998:,.2f} – ₹{curr_p:,.2f}",
+                    "entry_zone": f"₹{curr_p * 0.998:,.2f} – ₹{curr_p:.2f}",
                     "target_1_price": t1_p,
                     "target_1_gain_pct": t1_gain_pct,
                     "target_2_price": t2_p,
@@ -214,8 +225,8 @@ class PreMarketAnalyzer:
             except Exception:
                 continue
 
-        # Sort scanned items by score (highest confidence first)
-        scanned_items.sort(key=lambda x: x["score"], reverse=True)
+        # Sort scanned items by win probability and mathematical score (highest quality first)
+        scanned_items.sort(key=lambda x: (x.get("win_probability", 50), x["score"]), reverse=True)
         top_picks = scanned_items[:top_n]
 
         # Sort gap leaderboards

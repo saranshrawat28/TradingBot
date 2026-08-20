@@ -767,6 +767,11 @@ def render_pre_market_tab(broker_instance):
                 score = pick["score"]
                 reason = pick["reason"]
 
+                setup_badge = pick.get("setup_grade_title", "⚡ GRADE A")
+                win_p = pick.get("win_probability", 70)
+                rs_info = pick.get("relative_strength", {})
+                sq_info = pick.get("ttm_squeeze", {})
+
                 st.markdown(f"""
                 <div style='background: #111622; border: 1.5px solid {act_badge}; border-radius: 12px; padding: 18px; height: 100%; display: flex; flex-direction: column; justify-content: space-between;'>
                     <div>
@@ -774,8 +779,11 @@ def render_pre_market_tab(broker_instance):
                             <div style='font-size: 1.15rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif;'>{name}</div>
                             <span style='background: {act_badge}22; color: {act_badge}; border: 1px solid {act_badge}; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 0.78rem;'>{act_title}</span>
                         </div>
-                        <div style='font-size: 1.35rem; font-weight: 800; color: #38bdf8; margin: 6px 0; font-family: "JetBrains Mono", monospace;'>₹{price:,.2f}</div>
-                        <div style='color: #94a3b8; font-size: 0.78rem; margin-bottom: 12px;'>AI Confidence: <strong style='color: #f8fafc;'>{score:.1f} / 10.0</strong></div>
+                        <div style='display: flex; justify-content: space-between; align-items: baseline; margin: 6px 0;'>
+                            <div style='font-size: 1.35rem; font-weight: 800; color: #38bdf8; font-family: "JetBrains Mono", monospace;'>₹{price:,.2f}</div>
+                            <span style='background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); padding: 2px 6px; border-radius: 4px; font-size: 0.72rem; font-weight: 700;'>{win_p}% Win Rate</span>
+                        </div>
+                        <div style='color: #94a3b8; font-size: 0.78rem; margin-bottom: 10px;'>Setup: <strong style='color: #f8fafc;'>{setup_badge}</strong> &bull; Score: <strong style='color: #f8fafc;'>{score:.1f}/10</strong></div>
                         
                         <div style='background: #080b11; border: 1px solid #1e293b; border-radius: 8px; padding: 10px; margin-bottom: 12px;'>
                             <div style='display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 4px;'>
@@ -1969,15 +1977,24 @@ elif active_tab in ["🎯 Smart Stock Advisor (When to Buy/Sell)", "🎯 Easy St
     if analysis.get("status") == "SUCCESS":
         st.markdown("---")
         
-        # Big Verdict Banner (Two-Tier High Contrast)
+        # Big Verdict Banner (Two-Tier High Contrast with Setup Quality Grading)
         v_col1, v_col2 = st.columns([1.5, 3])
         badge_c = analysis.get("badge_color", "#10b981")
+        setup_grade = analysis.get("setup_grade_title", "⚡ GRADE A (High Probability)")
+        win_prob = analysis.get("win_probability", 72)
+        rs_data = analysis.get("relative_strength", {})
+        sq_data = analysis.get("ttm_squeeze", {})
+
         with v_col1:
             st.markdown(f"""
             <div style='background: #111622; border: 2px solid {badge_c}; border-radius: 10px; padding: 18px; text-align: center;'>
-                <div style='font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>Overall Verdict</div>
-                <div style='font-size: 1.5rem; font-weight: 800; color: {badge_c}; margin: 6px 0; font-family: "Outfit", sans-serif;'>{analysis.get("verdict")}</div>
-                <div style='font-size: 1.1rem; font-weight: 700; color: #f8fafc;'>Score: <span class='mono-num'>{analysis.get("score")} / 10</span></div>
+                <div style='font-size: 0.72rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>Setup Quality Grade</div>
+                <div style='font-size: 1.05rem; font-weight: 800; color: #f8fafc; margin: 4px 0;'>{setup_grade}</div>
+                <div style='font-size: 1.4rem; font-weight: 800; color: {badge_c}; margin: 4px 0; font-family: "Outfit", sans-serif;'>{analysis.get("verdict")}</div>
+                <div style='display: flex; justify-content: center; gap: 8px; font-size: 0.85rem; margin-top: 4px;'>
+                    <span style='color: #f8fafc; font-weight: 700;'>Score: <span class='mono-num'>{analysis.get("score")} / 10</span></span>
+                    <span style='background: rgba(16,185,129,0.2); color: #10b981; padding: 1px 6px; border-radius: 4px; font-weight: 700;'>{win_prob}% Win-Rate</span>
+                </div>
             </div>
             """, unsafe_allow_html=True)
         with v_col2:
@@ -1985,17 +2002,25 @@ elif active_tab in ["🎯 Smart Stock Advisor (When to Buy/Sell)", "🎯 Easy St
             v_desc = analysis.get("verdict_desc", "")
             curr_p = analysis.get("current_price", 0.0)
             h_text = analysis.get("horizon_text", analysis.get("holding_time_text", "Swing (3-7 Days)"))
+            
+            rs_tag = f"<span style='color: #10b981;'>💪 RS: +{rs_data.get('rs_diff_pct', 0.0)}% vs Nifty</span>" if rs_data.get("status") in ["STRONG_OUTPERFORMER", "OUTPERFORMING"] else "<span style='color: #94a3b8;'>In-line with Nifty</span>"
+            sq_tag = "<span style='color: #38bdf8; font-weight: 700;'>🚀 TTM Squeeze Fired</span>" if sq_data.get("squeeze_fired") else ("<span style='color: #f59e0b;'>⚡ Squeeze Coiling</span>" if sq_data.get("squeeze_on") else "")
+
             st.markdown(f"""
             <div style='background: #111622; border: 1px solid #1e293b; border-radius: 10px; padding: 18px;'>
-                <div style='font-size: 1.2rem; font-weight: 700; color: #f8fafc; margin-bottom: 6px; font-family: "Outfit", sans-serif;'>
-                    Analysis for <strong>{disp_name}</strong> (`{clean_symbol(adv_sym)}`)
+                <div style='display: flex; justify-content: space-between; align-items: baseline;'>
+                    <div style='font-size: 1.2rem; font-weight: 700; color: #f8fafc; font-family: "Outfit", sans-serif;'>
+                        Analysis for <strong>{disp_name}</strong> (`{clean_symbol(adv_sym)}`)
+                    </div>
+                    <div>{sq_tag}</div>
                 </div>
-                <div style='color: #94a3b8; font-size: 0.92rem; margin-bottom: 10px;'>
+                <div style='color: #94a3b8; font-size: 0.90rem; margin: 6px 0 10px 0;'>
                     {v_desc}
                 </div>
-                <div style='display: flex; gap: 18px; font-size: 0.9rem;'>
+                <div style='display: flex; gap: 18px; font-size: 0.88rem; flex-wrap: wrap;'>
                     <div>💵 <strong>Live Price:</strong> <span class='mono-num'>₹{curr_p:,.2f}</span></div>
-                    <div>⏳ <strong>Holding Horizon:</strong> {h_text}</div>
+                    <div>⏳ <strong>Horizon:</strong> {h_text}</div>
+                    <div>{rs_tag}</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)

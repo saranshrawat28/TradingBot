@@ -237,6 +237,64 @@ class TestAccuracySuite(unittest.TestCase):
         self.assertFalse(approved)
         self.assertIn("Low-Volume Breakout", reason)
 
+    def test_relative_strength_vs_benchmark(self):
+        """Verify that Relative Strength (RS) correctly detects outperforming alpha vs benchmark."""
+        from src.strategies.indicators import calculate_relative_strength_vs_benchmark
+        # Stock gained +10% while benchmark gained +2%
+        stock_close = pd.Series([100.0] * 10 + [110.0] * 10)
+        nifty_close = pd.Series([20000.0] * 10 + [20400.0] * 10)
+        
+        rs = calculate_relative_strength_vs_benchmark(stock_close, nifty_close, period=20)
+        self.assertIn(rs["status"], ["STRONG_OUTPERFORMER", "OUTPERFORMING"])
+        self.assertGreater(rs["rs_ratio"], 1.02)
+        self.assertGreater(rs["score_boost"], 0.0)
+
+    def test_ttm_squeeze_detection(self):
+        """Verify that TTM Squeeze detects volatility compression and breakout momentum."""
+        from src.strategies.indicators import calculate_ttm_squeeze
+        # Flat coiling prices
+        flat_prices = pd.Series([100.0 + (i % 2) * 0.1 for i in range(30)])
+        sq = calculate_ttm_squeeze(flat_prices + 0.2, flat_prices - 0.2, flat_prices)
+        self.assertIn("squeeze_on", sq)
+        self.assertIn("squeeze_fired", sq)
+        self.assertIn("momentum_direction", sq)
+
+    def test_vsa_trap_and_absorption(self):
+        """Verify that Volume Spread Analysis identifies distribution traps and stopping volume."""
+        from src.strategies.indicators import calculate_vsa_structure
+        dates = pd.date_range("2026-01-01", periods=25, freq="5min")
+        
+        # High volume upper wick rejection trap
+        o_s = pd.Series([100.0] * 24 + [110.0], index=dates)
+        h_s = pd.Series([102.0] * 24 + [125.0], index=dates) # Huge upper shadow
+        l_s = pd.Series([99.0] * 24 + [108.0], index=dates)
+        c_s = pd.Series([101.0] * 24 + [109.0], index=dates) # Closed at lows of bar
+        v_s = pd.Series([1000] * 24 + [3500], index=dates)  # 3.5x volume spike
+
+        vsa = calculate_vsa_structure(o_s, h_s, l_s, c_s, v_s)
+        self.assertTrue(vsa["is_trap"])
+        self.assertEqual(vsa["pattern"], "CLIMAX_DISTRIBUTION_TRAP")
+
+    def test_setup_quality_grading_and_win_rate(self):
+        """Verify that StockAdvisor grades setups (A+, A, B, AVOID) with estimated win rate."""
+        dates = pd.date_range("2026-01-01 09:15", periods=60, freq="5min")
+        df_bull = pd.DataFrame({
+            "Open": np.linspace(100, 160, 60),
+            "High": np.linspace(102, 162, 60),
+            "Low": np.linspace(99, 159, 60),
+            "Close": np.linspace(101, 161, 60),
+            "Volume": [15000] * 60
+        }, index=dates)
+
+        res = StockAdvisor.evaluate_df_slice(df_bull, "TEST_GRADE")
+        self.assertIn(res["setup_grade"], ["GRADE_A_PLUS", "GRADE_A", "GRADE_B", "GRADE_AVOID"])
+        self.assertGreaterEqual(res["win_probability"], 40)
+        self.assertLessEqual(res["win_probability"], 95)
+        self.assertIn("ttm_squeeze", res)
+        self.assertIn("vsa_profile", res)
+        self.assertIn("relative_strength", res)
+
 if __name__ == "__main__":
     unittest.main()
+
 

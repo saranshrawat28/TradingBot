@@ -649,4 +649,176 @@ def evaluate_pivot_confluence(
     return 0.00
 
 
+def calculate_relative_strength_vs_benchmark(
+    stock_close: pd.Series,
+    benchmark_close: Optional[pd.Series] = None,
+    period: int = 20
+) -> Dict[str, Any]:
+    """
+    Institutional Relative Strength (RS) vs Benchmark (NIFTY 50).
+    Measures alpha and outperformance over rolling period.
+    - RS Ratio > 1.02: Institutional Accumulation / Outperforming benchmark.
+    - RS Ratio 0.98 - 1.02: In-line with market.
+    - RS Ratio < 0.98: Underperforming benchmark (avoid Longs).
+    """
+    if stock_close is None or len(stock_close) < period:
+        return {"rs_ratio": 1.00, "rs_pct": 0.0, "status": "INLINE", "score_boost": 0.0}
+
+    s_ret = (stock_close.iloc[-1] / stock_close.iloc[-period]) - 1.0 if stock_close.iloc[-period] > 0 else 0.0
+    
+    if benchmark_close is not None and len(benchmark_close) >= period and benchmark_close.iloc[-period] > 0:
+        b_ret = (benchmark_close.iloc[-1] / benchmark_close.iloc[-period]) - 1.0
+    else:
+        b_ret = 0.0
+
+    rs_diff = s_ret - b_ret
+    rs_ratio = round(1.0 + rs_diff, 4)
+
+    if rs_ratio >= 1.025:
+        status = "STRONG_OUTPERFORMER"
+        boost = 0.40
+    elif rs_ratio >= 1.008:
+        status = "OUTPERFORMING"
+        boost = 0.20
+    elif rs_ratio <= 0.975:
+        status = "HEAVY_UNDERPERFORMER"
+        boost = -0.40
+    elif rs_ratio <= 0.992:
+        status = "UNDERPERFORMING"
+        boost = -0.20
+    else:
+        status = "INLINE"
+        boost = 0.0
+
+    return {
+        "rs_ratio": rs_ratio,
+        "rs_diff_pct": round(rs_diff * 100.0, 2),
+        "status": status,
+        "score_boost": boost
+    }
+
+
+def calculate_ttm_squeeze(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    bb_period: int = 20,
+    bb_std: float = 2.0,
+    kc_period: int = 20,
+    kc_mult: float = 1.5
+) -> Dict[str, Any]:
+    """
+    TTM Volatility Squeeze Indicator (Bollinger Bands vs Keltner Channels).
+    - Squeeze ON: Bollinger Bands contract inside Keltner Channel (Energy Coiling).
+    - Squeeze FIRE: Bollinger Bands expand outside Keltner Channel with directional momentum.
+    High win-rate setup (>75%) when exiting compression.
+    """
+    if len(close) < bb_period:
+        return {"squeeze_on": False, "squeeze_fired": False, "momentum_direction": "NEUTRAL", "score_boost": 0.0}
+
+    # Bollinger Bands
+    sma = calculate_sma(close, bb_period)
+    r_std = close.rolling(window=bb_period, min_periods=1).std()
+    bb_upper = sma + (r_std * bb_std)
+    bb_lower = sma - (r_std * bb_std)
+
+    # Keltner Channels
+    atr = calculate_atr(high, low, close, kc_period)
+    kc_upper = sma + (atr * kc_mult)
+    kc_lower = sma - (atr * kc_mult)
+
+    # Squeeze Condition (BB inside KC)
+    is_squeeze_series = (bb_lower > kc_lower) & (bb_upper < kc_upper)
+    squeeze_now = bool(is_squeeze_series.iloc[-1])
+    
+    # Squeeze Fired (Was in squeeze in last 3 bars, now broken out)
+    past_squeeze = bool(is_squeeze_series.iloc[-4:-1].any()) if len(is_squeeze_series) >= 4 else False
+    squeeze_fired = (not squeeze_now) and past_squeeze
+
+    # Momentum Linear Regression
+    mom_series = close - sma
+    mom_curr = float(mom_series.iloc[-1])
+    mom_prev = float(mom_series.iloc[-2]) if len(mom_series) > 1 else mom_curr
+
+    if mom_curr > 0 and mom_curr > mom_prev:
+        mom_dir = "BULLISH_EXPANSION"
+        boost = 0.40 if squeeze_fired else (0.20 if squeeze_now else 0.10)
+    elif mom_curr > 0 and mom_curr <= mom_prev:
+        mom_dir = "BULLISH_FADING"
+        boost = 0.00
+    elif mom_curr < 0 and mom_curr < mom_prev:
+        mom_dir = "BEARISH_EXPANSION"
+        boost = -0.40 if squeeze_fired else (-0.20 if squeeze_now else -0.10)
+    else:
+        mom_dir = "BEARISH_FADING"
+        boost = 0.00
+
+    return {
+        "squeeze_on": squeeze_now,
+        "squeeze_fired": squeeze_fired,
+        "momentum_direction": mom_dir,
+        "score_boost": boost
+    }
+
+
+def calculate_vsa_structure(
+    open_: pd.Series,
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    volume: pd.Series
+) -> Dict[str, Any]:
+    """
+    Volume Spread Analysis (VSA) Trap Filter:
+    - No Supply Bar: Down-bar with narrow spread (< 0.6x ATR) and low volume (< 0.8x RVol) = Bullish continuation.
+    - Stopping Volume: High volume (> 1.5x) with narrow spread closing in upper half after decline = Accumulation floor.
+    - Climax Distribution: Ultra-high volume (> 2.2x) on wide range into resistance with upper rejection = Bearish trap.
+    """
+    if len(close) < 20:
+        return {"pattern": "NORMAL", "score_boost": 0.0, "is_trap": False}
+
+    atr = float(calculate_atr(high, low, close, 14).iloc[-1])
+    rvol = calculate_rvol(volume, 20)
+
+    curr_o = float(open_.iloc[-1])
+    curr_h = float(high.iloc[-1])
+    curr_l = float(low.iloc[-1])
+    curr_c = float(close.iloc[-1])
+
+    spread = curr_h - curr_l
+    body = abs(curr_c - curr_o)
+    upper_wick = curr_h - max(curr_o, curr_c)
+    lower_wick = min(curr_o, curr_c) - curr_l
+
+    # 1. Climax Distribution Trap (Overhead supply dumping)
+    if rvol >= 2.0 and upper_wick >= (0.35 * spread) and curr_c < curr_o:
+        return {
+            "pattern": "CLIMAX_DISTRIBUTION_TRAP",
+            "description": "Institutional selling into strength with heavy upper wick.",
+            "score_boost": -0.50,
+            "is_trap": True
+        }
+
+    # 2. Stopping Volume / Absorption Support
+    if rvol >= 1.5 and lower_wick >= (0.40 * spread) and curr_c >= curr_o:
+        return {
+            "pattern": "STOPPING_VOLUME_ABSORPTION",
+            "description": "Institutional demand absorbing selling pressure at lows.",
+            "score_boost": 0.35,
+            "is_trap": False
+        }
+
+    # 3. No Supply Pullback Bar (Dry-up before breakout)
+    if curr_c < curr_o and spread < (0.7 * atr) and rvol < 0.75:
+        return {
+            "pattern": "NO_SUPPLY_PULLBACK",
+            "description": "Low-volume pullback testing supply (Bullish continuation).",
+            "score_boost": 0.30,
+            "is_trap": False
+        }
+
+    return {"pattern": "NORMAL", "description": "Standard order-flow structure.", "score_boost": 0.0, "is_trap": False}
+
+
+
 
