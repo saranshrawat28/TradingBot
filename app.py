@@ -1591,9 +1591,29 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                                 t2_val = round(entry_val * 1.65, 1)
                                 cap_val = round(entry_val * o_lot, 2)
                                 is_bull = "CALL" in o_act or "CE" in o_contract
-                                sp_trig_val = round(u_spot + (10.0 if is_bull else -10.0), 1)
+                                sp_trig_val = float(opp.get("spot_trigger", round(u_spot + (10.0 if is_bull else -10.0), 1)))
                                 max_risk_inr = round(abs(entry_val - sl_val) * o_lot, 0)
                                 exp_gain_inr = round(abs(t1_val - entry_val) * o_lot, 0)
+                                
+                                # Evaluate directional trigger condition
+                                if is_bull:
+                                    trigger_met = u_spot >= sp_trig_val
+                                    pts_away = sp_trig_val - u_spot
+                                    if trigger_met:
+                                        zone_text = f"🟢 TRIGGER ACTIVE (Spot ≥ ₹{sp_trig_val:,.0f})"
+                                        zone_color = "#10b981"
+                                    else:
+                                        zone_text = f"⏳ AWAITING TRIGGER ({pts_away:.1f} pts away)"
+                                        zone_color = "#f59e0b"
+                                else:
+                                    trigger_met = u_spot <= sp_trig_val
+                                    pts_away = u_spot - sp_trig_val
+                                    if trigger_met:
+                                        zone_text = f"🟢 BREAKDOWN ACTIVE (Spot ≤ ₹{sp_trig_val:,.0f})"
+                                        zone_color = "#10b981"
+                                    else:
+                                        zone_text = f"⏳ AWAITING BREAKDOWN ({pts_away:.1f} pts away)"
+                                        zone_color = "#f59e0b"
                             else:
                                 live_p = u_spot
                                 entry_val = float(opp.get("entry_price", u_spot))
@@ -1605,17 +1625,16 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                                 max_risk_inr = round(abs(entry_val - sl_val) * o_lot, 0)
                                 exp_gain_inr = round(abs(t1_val - entry_val) * o_lot, 0)
                                 is_bull = "BUY" in o_act
-                                
-                            diff_pct = ((live_p - entry_val) / max(0.01, entry_val)) * 100.0 if entry_val > 0 else 0.0
-                            if abs(diff_pct) <= 1.5:
-                                zone_text = "🟢 READY TO ENTER"
-                                zone_color = "#10b981"
-                            elif diff_pct > 1.5:
-                                zone_text = f"⚡ RUNNING (+{diff_pct:.1f}%)"
-                                zone_color = "#38bdf8"
-                            else:
-                                zone_text = f"⏳ DISCOUNT ({diff_pct:.1f}%)"
-                                zone_color = "#94a3b8"
+                                diff_pct = ((live_p - entry_val) / max(0.01, entry_val)) * 100.0 if entry_val > 0 else 0.0
+                                if abs(diff_pct) <= 1.0:
+                                    zone_text = "🟢 READY TO ENTER"
+                                    zone_color = "#10b981"
+                                elif diff_pct > 1.0:
+                                    zone_text = f"⚡ RUNNING (+{diff_pct:.1f}%)"
+                                    zone_color = "#38bdf8"
+                                else:
+                                    zone_text = f"⏳ DISCOUNT ({diff_pct:.1f}%)"
+                                    zone_color = "#94a3b8"
                             
                             card_border = "#10b981" if is_bull else "#f43f5e"
                             contract_title = o_contract if is_opt else o_sym
@@ -1636,47 +1655,47 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                                     </div>
                                 </div>
 
-                                <!-- 4-Box Telemetry Grid -->
+                                <!-- 4 Direct Action Boxes: Entry, SL Exit, Target 1 Exit, Target 2 Exit -->
                                 <div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 14px;'>
-                                    <!-- Box 1: Live Market Price -->
-                                    <div style='background: #090d16; border: 1px solid #1e293b; border-radius: 8px; padding: 12px; text-align: center;'>
-                                        <div style='color: #94a3b8; font-size: 0.74rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;'>⚡ Live Price (LTP)</div>
-                                        <div style='color: #38bdf8; font-size: 1.45rem; font-weight: 800; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{live_p:,.2f}</div>
-                                        <div style='color: {zone_color}; font-size: 0.75rem; font-weight: 600;'>{zone_text}</div>
+                                    <!-- Box 1: BUY ENTRY PRICE -->
+                                    <div style='background: #090d16; border: 1px solid #38bdf8; border-radius: 8px; padding: 12px; text-align: center;'>
+                                        <div style='color: #38bdf8; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🟢 BUY ENTRY PRICE</div>
+                                        <div style='color: #ffffff; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{entry_val:,.2f}</div>
+                                        <div style='color: {zone_color}; font-size: 0.75rem; font-weight: 700;'>{zone_text}</div>
                                     </div>
 
-                                    <!-- Box 2: Suggested Entry -->
-                                    <div style='background: #090d16; border: 1px solid #1e293b; border-radius: 8px; padding: 12px; text-align: center;'>
-                                        <div style='color: #94a3b8; font-size: 0.74rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;'>🎯 Entry Zone</div>
-                                        <div style='color: #f8fafc; font-size: 1.45rem; font-weight: 800; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{entry_val:,.2f}</div>
-                                        <div style='color: #94a3b8; font-size: 0.75rem;'>Trigger: Spot {'≥' if is_bull else '≤'} ₹{sp_trig_val:,.0f}</div>
+                                    <!-- Box 2: STOP-LOSS EXIT -->
+                                    <div style='background: #090d16; border: 1px solid rgba(244, 63, 94, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
+                                        <div style='color: #f43f5e; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🛑 STOP-LOSS EXIT</div>
+                                        <div style='color: #f43f5e; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{sl_val:,.2f}</div>
+                                        <div style='color: #f43f5e; font-size: 0.75rem; font-weight: 700;'>Exit on -22% (-₹{max_risk_inr:,.0f})</div>
                                     </div>
 
-                                    <!-- Box 3: Stop-Loss -->
-                                    <div style='background: #090d16; border: 1px solid rgba(244, 63, 94, 0.3); border-radius: 8px; padding: 12px; text-align: center;'>
-                                        <div style='color: #f43f5e; font-size: 0.74rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;'>🛑 Safety Stop-Loss</div>
-                                        <div style='color: #f43f5e; font-size: 1.45rem; font-weight: 800; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{sl_val:,.2f}</div>
-                                        <div style='color: #f43f5e; font-size: 0.75rem; font-weight: 600;'>-22.0% (-₹{max_risk_inr:,.0f}/lot)</div>
+                                    <!-- Box 3: TARGET 1 EXIT (50%) -->
+                                    <div style='background: #090d16; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
+                                        <div style='color: #10b981; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🎯 TARGET 1 EXIT (50%)</div>
+                                        <div style='color: #10b981; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{t1_val:,.2f}</div>
+                                        <div style='color: #10b981; font-size: 0.75rem; font-weight: 700;'>Book 50% (+35% / +₹{exp_gain_inr:,.0f})</div>
                                     </div>
 
-                                    <!-- Box 4: Profit Targets -->
-                                    <div style='background: #090d16; border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px; text-align: center;'>
-                                        <div style='color: #10b981; font-size: 0.74rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;'>🚀 Targets (T1 | T2)</div>
-                                        <div style='color: #10b981; font-size: 1.25rem; font-weight: 800; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{t1_val:,.0f} &bull; ₹{t2_val:,.0f}</div>
-                                        <div style='color: #10b981; font-size: 0.75rem; font-weight: 600;'>+35% / +65% (+₹{exp_gain_inr:,.0f})</div>
+                                    <!-- Box 4: TARGET 2 EXIT (100%) -->
+                                    <div style='background: #090d16; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
+                                        <div style='color: #10b981; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🚀 TARGET 2 EXIT (100%)</div>
+                                        <div style='color: #10b981; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{t2_val:,.2f}</div>
+                                        <div style='color: #10b981; font-size: 0.75rem; font-weight: 700;'>Full Exit (+65% / +₹{round(abs(t2_val-entry_val)*o_lot, 0):,.0f})</div>
                                     </div>
                                 </div>
 
                                 <!-- Quick Specs Strip -->
                                 <div style='display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.7); border: 1px solid #1e293b; border-radius: 6px; padding: 8px 14px; font-size: 0.82rem; color: #cbd5e1; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;'>
-                                    <div>📦 <strong>1 Lot:</strong> {o_lot} Shares (Capital: <strong style='color: #38bdf8;'>₹{cap_val:,.0f}</strong>)</div>
-                                    <div>🇮🇳 <strong>{o_sym.replace('^','')} Spot:</strong> ₹{u_spot:,.2f} (<span style='color: {"#10b981" if u_chg >= 0 else "#f43f5e"};'>{'+' if u_chg >= 0 else ''}{u_chg:.2f}%</span>)</div>
-                                    <div>⏱️ <strong>Horizon:</strong> {o_horizon}</div>
+                                    <div>📦 <strong>Position:</strong> 1 Lot ({o_lot} Shares) &bull; Total Capital: <strong style='color: #38bdf8;'>₹{cap_val:,.0f}</strong></div>
+                                    <div>🇮🇳 <strong>{o_sym.replace('^','')} Spot:</strong> ₹{u_spot:,.2f} (<span style='color: {"#10b981" if u_chg >= 0 else "#f43f5e"};'>{'+' if u_chg >= 0 else ''}{u_chg:.2f}%</span>) &bull; <strong>Trigger:</strong> Spot {'≥' if is_bull else '≤'} ₹{sp_trig_val:,.1f}</div>
+                                    <div>⏱️ <strong>Holding Duration:</strong> {o_horizon}</div>
                                 </div>
 
                                 <!-- Setup Rationale -->
                                 <div style='color: #94a3b8; font-size: 0.84rem; line-height: 1.4;'>
-                                    🧠 <strong style='color: #e2e8f0;'>Setup:</strong> {o_setup} &mdash; {o_reason}
+                                    🧠 <strong style='color: #e2e8f0;'>Strategy:</strong> {o_setup} &mdash; {o_reason}
                                 </div>
                             </div>
                             """, unsafe_allow_html=True)
