@@ -1558,14 +1558,21 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                             o_contract = opp.get("option_contract", "N/A")
                             o_act = opp.get("action", "BUY_CALL")
                             o_conf = float(opp.get("confidence_score", 0.0))
-                            o_horizon = opp.get("time_horizon", "Intraday")
+                            o_horizon = opp.get("time_horizon", "Intraday (Exit by 3:15 PM)")
                             o_setup = opp.get("setup_name", "Momentum Setup")
                             o_entry = float(opp.get("entry_price", 0.0))
                             o_sl = float(opp.get("stop_loss", 0.0))
                             o_t1 = float(opp.get("target_1", 0.0))
                             o_t2 = float(opp.get("target_2", 0.0))
-                            o_gain = opp.get("expected_gain_pct", "+25%")
+                            o_gain = opp.get("expected_gain_pct", "+35% to +65%")
                             o_reason = opp.get("catalyst_reasoning", "")
+                            o_exp_str = opp.get("expiry_str", "27-AUG-2026 (Monthly Expiry)")
+                            o_lot = int(opp.get("lot_size", 75))
+                            o_cap = float(opp.get("capital_required", o_entry * o_lot))
+                            o_sp_trig = float(opp.get("spot_trigger", o_entry))
+                            o_sp_sl = float(opp.get("spot_sl", o_sl))
+                            o_sp_t1 = float(opp.get("spot_t1", o_t1))
+                            o_sp_t2 = float(opp.get("spot_t2", o_t2))
                             
                             # Fetch Live Quote for Underlying and Option Contract
                             is_opt = o_contract != "N/A" and ("CE" in o_contract or "PE" in o_contract)
@@ -1582,7 +1589,7 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                             # Calculate Execution Zone & Difference from Entry
                             diff_pct = ((live_p - o_entry) / max(0.01, o_entry)) * 100.0 if o_entry > 0 else 0.0
                             if abs(diff_pct) <= 1.5:
-                                zone_text = f"🟢 IN EXECUTION ZONE (Live: ₹{live_p:,.2f})"
+                                zone_text = f"🟢 IN BUY ZONE (Live: ₹{live_p:,.2f})"
                                 zone_badge = "badge-bull"
                             elif diff_pct > 1.5:
                                 zone_text = f"⚡ RUNNING (+{diff_pct:.1f}% from Entry)"
@@ -1594,31 +1601,45 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                             card_border = "#10b981" if "CALL" in o_act or "STOCK" in o_act else "#f43f5e"
                             display_title = f"#{o_rank} {o_contract if is_opt else o_sym} ({o_act})"
                             
-                            spot_strip = f"&bull; <strong>{o_sym} Spot:</strong> ₹{u_spot:,.2f} ({'+' if u_chg >= 0 else ''}{u_chg:.2f}%)" if is_opt else ""
+                            # Underlying Spot & Trigger telemetry strip
+                            if is_opt:
+                                spot_telemetry_html = f"""
+                                <div style='background: #0b0f19; border: 1px solid #1e293b; border-radius: 6px; padding: 8px 12px; margin: 8px 0; font-family: "JetBrains Mono", monospace; font-size: 0.82rem; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px;'>
+                                    <div>🇮🇳 <strong>{o_sym.replace('^','')} Spot:</strong> <span style='color: #f8fafc; font-weight: 700;'>₹{u_spot:,.2f}</span> (<span style='color: {"#10b981" if u_chg >= 0 else "#f43f5e"};'>{'+' if u_chg >= 0 else ''}{u_chg:.2f}%</span>)</div>
+                                    <div>⚡ <strong>Entry Trigger:</strong> <span style='color: #38bdf8;'>Spot {'≥' if 'CALL' in o_act else '≤'} ₹{o_sp_trig:,.1f}</span></div>
+                                    <div>📍 <strong>Spot SL:</strong> <span style='color: #f43f5e;'>₹{o_sp_sl:,.1f}</span></div>
+                                    <div>🎯 <strong>Spot T1:</strong> <span style='color: #10b981;'>₹{o_sp_t1:,.1f}</span> | <strong>T2:</strong> <span style='color: #10b981;'>₹{o_sp_t2:,.1f}</span></div>
+                                </div>
+                                """
+                            else:
+                                spot_telemetry_html = ""
                             
                             st.markdown(f"""
                             <div style='background: #111622; border-left: 4px solid {card_border}; border-radius: 8px; padding: 14px 18px; margin-bottom: 12px; border-top: 1px solid #1e293b; border-right: 1px solid #1e293b; border-bottom: 1px solid #1e293b;'>
-                                <div style='display: flex; justify-content: space-between; align-items: center;'>
+                                <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;'>
                                     <span style='font-size: 1.15rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif;'>{display_title}</span>
-                                    <div style='display: flex; gap: 8px; align-items: center;'>
-                                        <span class='{zone_badge}' style='font-size: 0.72rem; padding: 2px 8px;'>{zone_text}</span>
-                                        <span class='badge-bull'>⭐ CONVICTION: {o_conf:.1f}/10</span>
+                                    <div style='display: flex; gap: 6px; align-items: center; flex-wrap: wrap;'>
+                                        <span class='badge-sky' style='font-size: 0.72rem; padding: 2px 7px;'>📅 EXPIRY: {o_exp_str}</span>
+                                        <span class='badge-neutral' style='font-size: 0.72rem; padding: 2px 7px;'>📦 1 LOT: {o_lot} QTY (₹{o_cap:,.0f})</span>
+                                        <span class='{zone_badge}' style='font-size: 0.72rem; padding: 2px 7px;'>{zone_text}</span>
+                                        <span class='badge-bull' style='font-size: 0.72rem; padding: 2px 7px;'>⭐ CONVICTION: {o_conf:.1f}/10</span>
                                     </div>
                                 </div>
+                                {spot_telemetry_html}
                                 <div style='color: #38bdf8; font-size: 0.88rem; font-weight: 600; margin: 4px 0;'>
-                                    🎯 {o_setup} &bull; ⏱️ Horizon: <strong>{o_horizon}</strong> &bull; Target Gain: <span style='color: #10b981;'>{o_gain}</span> {spot_strip}
+                                    🎯 Setup: {o_setup} &bull; ⏱️ Time Horizon: <strong>{o_horizon}</strong> &bull; Target Return: <span style='color: #10b981;'>{o_gain}</span>
                                 </div>
-                                <div style='color: #cbd5e1; font-size: 0.86rem; margin-top: 6px; line-height: 1.4;'>🧠 <strong>Institutional Catalyst:</strong> {o_reason}</div>
+                                <div style='color: #cbd5e1; font-size: 0.85rem; margin-top: 4px; line-height: 1.4;'>🧠 <strong>Institutional Rationale:</strong> {o_reason}</div>
                             </div>
                             """, unsafe_allow_html=True)
                             
                             # 5 Clean Metric Columns & Execution Button
                             c_live, c_m1, c_m2, c_m3, c_m4, c_btn = st.columns([1.3, 1.1, 1.1, 1.1, 1.1, 1.8])
                             c_live.metric("⚡ Current Live LTP", f"₹{live_p:,.2f}", f"{diff_pct:+.2f}% vs Entry", delta_color="normal")
-                            c_m1.metric("🎯 Suggested Entry", f"₹{o_entry:,.2f}")
-                            c_m2.metric("🛑 Safety SL", f"₹{o_sl:,.2f}")
-                            c_m3.metric("🎯 Target 1", f"₹{o_t1:,.2f}")
-                            c_m4.metric("🚀 Target 2", f"₹{o_t2:,.2f}")
+                            c_m1.metric("🎯 Option Entry", f"₹{o_entry:,.2f}")
+                            c_m2.metric("🛑 Safety SL", f"₹{o_sl:,.2f}", f"-{round(((o_entry-o_sl)/max(1,o_entry))*100,1)}%")
+                            c_m3.metric("🎯 Target 1", f"₹{o_t1:,.2f}", f"+{round(((o_t1-o_entry)/max(1,o_entry))*100,1)}%")
+                            c_m4.metric("🚀 Target 2", f"₹{o_t2:,.2f}", f"+{round(((o_t2-o_entry)/max(1,o_entry))*100,1)}%")
                             
                             with c_btn:
                                 st.write("")

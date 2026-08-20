@@ -3,6 +3,7 @@ Helper functions for Indian stock market time checks, currency formatting, and s
 """
 
 from datetime import datetime, time, timezone, timedelta
+from typing import Optional
 import config
 
 IST_OFFSET = timedelta(hours=5, minutes=30)
@@ -129,4 +130,107 @@ def format_holding_duration(entry_time_str: str) -> str:
             return f"{hours}h {mins}m ago"
     except Exception:
         return "Active"
+
+def get_lot_size(symbol: str) -> int:
+    """Returns standard NSE F&O lot size for index and equity options."""
+    sym_up = symbol.upper().replace(".NS", "").replace(".BO", "")
+    if "BANK" in sym_up or "NSEBANK" in sym_up:
+        return 30
+    if "NIFTY" in sym_up or "NSEI" in sym_up:
+        return 75
+    if "FINNIFTY" in sym_up:
+        return 65
+    if "SENSEX" in sym_up or "BSESN" in sym_up:
+        return 10
+    if "RELIANCE" in sym_up:
+        return 250
+    if "TCS" in sym_up:
+        return 175
+    if "HDFCBANK" in sym_up:
+        return 550
+    if "INFY" in sym_up:
+        return 400
+    if "SBIN" in sym_up:
+        return 750
+    if "ICICIBANK" in sym_up:
+        return 700
+    return 50
+
+def get_nse_options_expiry_details(now_dt: Optional[datetime] = None) -> dict:
+    """
+    Calculates upcoming NSE options expiry dates (Weekly Thursday & Monthly Last Thursday).
+    """
+    from datetime import date
+    import calendar
+    
+    now = now_dt or get_ist_now()
+    now_date = now.date() if isinstance(now, datetime) else now
+    
+    # 1. Find Current and Next Thursday (weekday 3)
+    days_to_current_thu = (3 - now_date.weekday()) % 7
+    current_thu_date = now_date + timedelta(days=days_to_current_thu)
+    
+    # If today is Thursday and after market close (15:30), roll to next week
+    is_today_0dte = (now_date.weekday() == 3)
+    if is_today_0dte and hasattr(now, "hour") and (now.hour > 15 or (now.hour == 15 and now.minute >= 30)):
+        current_thu_date = now_date + timedelta(days=7)
+        next_thu_date = current_thu_date + timedelta(days=7)
+        is_today_0dte = False
+    else:
+        next_thu_date = current_thu_date + timedelta(days=7)
+        
+    # 2. Find Last Thursday of Current Month (Monthly Expiry)
+    _, last_day_num = calendar.monthrange(now_date.year, now_date.month)
+    month_end_date = date(now_date.year, now_date.month, last_day_num)
+    offset_to_thu = (month_end_date.weekday() - 3) % 7
+    monthly_thu_date = month_end_date - timedelta(days=offset_to_thu)
+    
+    if now_date > monthly_thu_date:
+        next_m_year = now_date.year if now_date.month < 12 else now_date.year + 1
+        next_m_month = now_date.month + 1 if now_date.month < 12 else 1
+        _, next_last_day_num = calendar.monthrange(next_m_year, next_m_month)
+        next_month_end = date(next_m_year, next_m_month, next_last_day_num)
+        next_offset = (next_month_end.weekday() - 3) % 7
+        monthly_thu_date = next_month_end - timedelta(days=next_offset)
+        
+    cur_exp_str = current_thu_date.strftime("%d-%b-%Y").upper()
+    cur_exp_tag = current_thu_date.strftime("%d%b%y").upper()
+    next_exp_str = next_thu_date.strftime("%d-%b-%Y").upper()
+    next_exp_tag = next_thu_date.strftime("%d%b%y").upper()
+    monthly_exp_str = monthly_thu_date.strftime("%d-%b-%Y").upper()
+    monthly_exp_tag = monthly_thu_date.strftime("%d%b%y").upper()
+    
+    # Target recommendation logic:
+    if is_today_0dte and hasattr(now, "hour") and (now.hour > 13 or (now.hour == 13 and now.minute >= 30)):
+        rec_date = next_thu_date
+        rec_str = f"{next_exp_str} (Next Weekly Expiry)"
+        rec_tag = next_exp_tag
+        is_rec_0dte = False
+    elif is_today_0dte:
+        rec_date = current_thu_date
+        rec_str = f"{cur_exp_str} (Today 0DTE Expiry)"
+        rec_tag = cur_exp_tag
+        is_rec_0dte = True
+    else:
+        rec_date = current_thu_date
+        is_monthly = (current_thu_date == monthly_thu_date)
+        rec_str = f"{cur_exp_str} ({'Monthly' if is_monthly else 'Weekly'} Expiry)"
+        rec_tag = cur_exp_tag
+        is_rec_0dte = False
+        
+    days_left = max(0, (rec_date - now_date).days)
+    
+    return {
+        "recommended_expiry_date": rec_date.strftime("%Y-%m-%d"),
+        "recommended_expiry_str": rec_str,
+        "recommended_expiry_tag": rec_tag,
+        "current_weekly_str": cur_exp_str,
+        "current_weekly_tag": cur_exp_tag,
+        "next_weekly_str": next_exp_str,
+        "next_weekly_tag": next_exp_tag,
+        "monthly_expiry_str": monthly_exp_str,
+        "monthly_expiry_tag": monthly_exp_tag,
+        "is_0dte": is_rec_0dte,
+        "dte_days": float(days_left)
+    }
 
