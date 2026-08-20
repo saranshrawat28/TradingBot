@@ -313,7 +313,7 @@ def load_ai_settings() -> dict:
         pass
     return {
         "provider": "gemini",
-        "model": "gemini-3.1-flash-lite",
+        "model": "gemini-3.7-flash",
         "api_key": "",
         "is_connected": False,
         "target_asset": "NIFTY",

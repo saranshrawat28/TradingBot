@@ -28,12 +28,12 @@ class LLMClient:
     def __init__(
         self,
         provider: str = "gemini",
-        model: str = "gemini-3.1-flash-lite",
+        model: str = "gemini-3.7-flash",
         api_key: Optional[str] = None,
         timeout: int = 15
     ):
         self.provider = provider.lower()
-        self.model = model.strip() if model else "gemini-3.1-flash-lite"
+        self.model = model.strip() if model else "gemini-3.7-flash"
         self.timeout = timeout
         self.api_key = api_key.strip() if api_key else self._get_env_api_key(self.provider)
         self.last_call_time = 0.0
