@@ -44,6 +44,7 @@ from src.engine.market_hunter_daemon import MarketHunterDaemon
 from src.engine.software_oco_manager import SoftwareOCOManager
 from src.brokers.zerodha_live import ZerodhaLiveBroker
 from src.backtest.ai_backtester import AIBacktester
+from src.ui.research_tab import render_quant_research_tab
 from src.brokers import get_broker, BROKERS_MAP
 
 # -------------------------------------------------------------
@@ -616,6 +617,7 @@ else:
         "🗣️ Talk to Your AI Bot (Chat & Voice)",
         "🌅 Pre-Market & Best Stocks Today",
         "🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)",
+        "🔬 Systematic Quant Research Lab",
         "⚡ NFO Options Greeks & OI Matrix",
         "🎯 Smart Stock Advisor (When to Buy/Sell)",
         "📊 Strategy Backtester (Test Any Stock)",
@@ -1953,6 +1955,12 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                 st.dataframe(cal_df, use_container_width=True)
             else:
                 st.info("No decision records in calibration journal yet.")
+
+# -------------------------------------------------------------
+# TAB 0.2: 🔬 Systematic Quantitative Research Lab
+# -------------------------------------------------------------
+elif active_tab == "🔬 Systematic Quant Research Lab":
+    render_quant_research_tab(broker)
 
 # -------------------------------------------------------------
 # TAB 0.5: ⚡ NFO Options Greeks & OI Matrix
