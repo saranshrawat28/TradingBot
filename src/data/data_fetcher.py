@@ -295,33 +295,32 @@ def get_live_quote(symbol: str, force_refresh: bool = False) -> dict:
             from src.strategies.options_greeks import BlackScholesEngine
             t_years = BlackScholesEngine.calculate_dte_years(expiry_date=exp_date)
             
-            # Grounded volatility based on India VIX
+            # Grounded volatility calibrated for NIFTY ATM strikes (ATM IV ~74% of India VIX)
             vix_quote = get_live_quote("^INDIAVIX")
             vix_val = float(vix_quote.get("price", 13.5) or 13.5)
-            vol = max(0.10, min(0.30, vix_val / 100.0))
+            vol = max(0.095, min(0.22, (vix_val * 0.74) / 100.0))
             
             curr_bs = BlackScholesEngine.calculate_option_price(
                 spot=spot_p,
                 strike=strike,
                 time_to_expiry_years=t_years,
-                risk_free_rate=0.07,
+                risk_free_rate=0.065,
                 volatility=vol,
                 option_type=opt_type
             )
             prev_bs = BlackScholesEngine.calculate_option_price(
                 spot=prev_spot,
                 strike=strike,
-                time_to_expiry_years=t_years + (1.0 / 365.0),
-                risk_free_rate=0.07,
+                time_to_expiry_years=t_years + (1.0 / 252.0),
+                risk_free_rate=0.065,
                 volatility=vol,
                 option_type=opt_type
             )
             intrinsic = max(0.0, spot_p - strike) if opt_type == "CE" else max(0.0, strike - spot_p)
             prev_intrinsic = max(0.0, prev_spot - strike) if opt_type == "CE" else max(0.0, strike - prev_spot)
             
-            min_time_val = max(5.0, 25.0 * math.sqrt(max(0.001, t_years * 365.0) / 7.0))
-            curr_opt_p = round(max(intrinsic + (min_time_val if curr_bs <= intrinsic else 0.0), curr_bs), 1)
-            prev_opt_p = round(max(prev_intrinsic + (min_time_val if prev_bs <= prev_intrinsic else 0.0), prev_bs), 1)
+            curr_opt_p = round(max(intrinsic, curr_bs), 1)
+            prev_opt_p = round(max(prev_intrinsic, prev_bs), 1)
             
             chg = round(curr_opt_p - prev_opt_p, 2)
             chg_p = round((chg / max(1.0, prev_opt_p)) * 100.0, 2)

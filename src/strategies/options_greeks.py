@@ -32,9 +32,9 @@ class BlackScholesEngine:
     @classmethod
     def calculate_dte_years(cls, expiry_date: Optional[str] = None) -> float:
         """
-        Calculates exact annualized time-to-expiry (T in years).
+        Calculates exact annualized time-to-expiry (T in years) based on standard 252 trading sessions.
         On expiry day (0DTE), calculates continuous decay based on remaining market minutes to 3:30 PM IST.
-        On non-expiry days, calculates exact fractional trading days remaining.
+        On non-expiry days, calculates exact fractional trading sessions remaining.
         """
         now = get_ist_now()
         is_today_expiry = False
@@ -44,13 +44,19 @@ class BlackScholesEngine:
                 if exp_dt == now.date():
                     is_today_expiry = True
                 else:
-                    days_left = (exp_dt - now.date()).days
-                    if days_left > 0:
-                        market_close_today = now.replace(hour=15, minute=30, second=0, microsecond=0)
-                        mins_left_today = max(0.0, (market_close_today - now).total_seconds() / 60.0)
-                        day_fraction = min(1.0, mins_left_today / 375.0)
-                        total_days = max(0.05, days_left + day_fraction)
-                        return total_days / 365.0
+                    cur = now.date() + timedelta(days=1)
+                    trading_days_ahead = 0
+                    while cur <= exp_dt:
+                        if cur.weekday() < 5: # Monday to Friday
+                            trading_days_ahead += 1
+                        cur += timedelta(days=1)
+                    
+                    market_close_today = now.replace(hour=15, minute=30, second=0, microsecond=0)
+                    mins_left_today = max(0.0, (market_close_today - now).total_seconds() / 60.0)
+                    day_fraction_today = min(1.0, mins_left_today / 375.0)
+                    
+                    total_trading_days = max(0.05, float(trading_days_ahead) + day_fraction_today)
+                    return total_trading_days / 252.0
             except Exception:
                 pass
                 
@@ -58,14 +64,19 @@ class BlackScholesEngine:
         if now.weekday() == 3 or is_today_expiry:
             market_close = now.replace(hour=15, minute=30, second=0, microsecond=0)
             mins_left = max(5.0, (market_close - now).total_seconds() / 60.0)
-            # 375 trading minutes per day * 365 days
-            return max(0.0005, (mins_left / (375.0 * 365.0)))
+            return max(0.0005, (mins_left / (375.0 * 252.0)))
         else:
-            # Days to next Thursday
             days_to_thu = (3 - now.weekday()) % 7
             if days_to_thu == 0:
                 days_to_thu = 7
-            return max(0.5, float(days_to_thu)) / 365.0
+            target_thu = now.date() + timedelta(days=days_to_thu)
+            cur = now.date() + timedelta(days=1)
+            t_days = 0
+            while cur <= target_thu:
+                if cur.weekday() < 5:
+                    t_days += 1
+                cur += timedelta(days=1)
+            return max(0.5, float(t_days)) / 252.0
 
     @staticmethod
     def calculate_d1_d2(

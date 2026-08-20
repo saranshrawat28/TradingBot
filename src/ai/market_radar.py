@@ -251,18 +251,17 @@ TASK:
         """
         from src.strategies.options_greeks import BlackScholesEngine
         t_years = BlackScholesEngine.calculate_dte_years(expiry_date=expiry_date)
-        vol = max(0.10, min(0.30, vix / 100.0))
+        vol = max(0.095, min(0.22, (vix * 0.74) / 100.0))
         bs_p = BlackScholesEngine.calculate_option_price(
             spot=spot_price,
             strike=strike,
             time_to_expiry_years=t_years,
-            risk_free_rate=0.07,
+            risk_free_rate=0.065,
             volatility=vol,
             option_type=option_type
         )
         intrinsic = max(0.0, spot_price - strike) if option_type.upper() == "CE" else max(0.0, strike - spot_price)
-        min_time_val = max(5.0, 25.0 * math.sqrt(max(0.001, t_years * 365.0) / 7.0))
-        premium = round(max(intrinsic + (min_time_val if bs_p <= intrinsic else 0.0), bs_p), 1)
+        premium = round(max(intrinsic, bs_p), 1)
         t1 = round(premium * 1.35, 1)
         t2 = round(premium * 1.65, 1)
         sl = round(premium * 0.78, 1)
