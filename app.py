@@ -3168,11 +3168,27 @@ elif active_tab == "📦 My Trades & Profit Book":
     st.markdown("### 📜 Past Completed Trades (Profit History)")
     if closed_trades:
         c_df = pd.DataFrame(closed_trades)
-        c_df["Profit / Loss (₹)"] = c_df["pnl"].apply(lambda x: format_currency_inr(x))
-        c_df["Return %"] = c_df["pnl_pct"].apply(lambda x: f"{x:+.2f}%")
-        c_df["Bought @"] = c_df["entry_price"].apply(lambda x: f"₹{x:.2f}")
-        c_df["Sold @"] = c_df["exit_price"].apply(lambda x: f"₹{x:.2f}")
-        c_df["Stock"] = c_df["symbol"].apply(lambda s: display_symbol_name(s))
+        
+        # Resolve PnL column defensively
+        pnl_col = "net_pnl" if "net_pnl" in c_df.columns else ("pnl" if "pnl" in c_df.columns else ("gross_pnl" if "gross_pnl" in c_df.columns else None))
+        if pnl_col:
+            c_df["Profit / Loss (₹)"] = c_df[pnl_col].apply(lambda x: format_currency_inr(float(x or 0.0)))
+        else:
+            c_df["Profit / Loss (₹)"] = "₹0.00"
+            
+        if "pnl_pct" in c_df.columns:
+            c_df["Return %"] = c_df["pnl_pct"].apply(lambda x: f"{float(x or 0.0):+.2f}%")
+        elif pnl_col and "entry_price" in c_df.columns and "quantity" in c_df.columns:
+            c_df["Return %"] = c_df.apply(lambda r: f"{(float(r[pnl_col] or 0)/(max(1.0, float(r.get('entry_price', 1.0))*float(r.get('quantity', 1.0))))*100.0):+.2f}%", axis=1)
+        else:
+            c_df["Return %"] = "0.00%"
+            
+        if "entry_price" in c_df.columns:
+            c_df["Bought @"] = c_df["entry_price"].apply(lambda x: f"₹{float(x or 0.0):.2f}")
+        if "exit_price" in c_df.columns:
+            c_df["Sold @"] = c_df["exit_price"].apply(lambda x: f"₹{float(x or 0.0):.2f}")
+        if "symbol" in c_df.columns:
+            c_df["Stock"] = c_df["symbol"].apply(lambda s: display_symbol_name(str(s)))
         
         display_cols = ["Stock", "side", "quantity", "Bought @", "Sold @", "Profit / Loss (₹)", "Return %", "exit_reason", "exit_time"]
         available_cols = [c for c in display_cols if c in c_df.columns]
