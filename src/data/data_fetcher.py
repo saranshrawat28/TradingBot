@@ -5,6 +5,7 @@ Features direct fast JSON chart streams, intelligent ticker resolution, and real
 
 import os
 import time
+import math
 import threading
 import concurrent.futures
 import requests
@@ -91,15 +92,37 @@ TICKER_ALIASES = {
 }
 
 def parse_option_symbol(symbol: str) -> Optional[dict]:
-    """Parse option contract symbols like NIFTY 24500 CE, NIFTY24500CE, etc."""
+    """
+    Parse option contract symbols like:
+    - NIFTY 24250 CE / NIFTY24250CE
+    - NIFTY 27AUG26 24250 CE / NIFTY27AUG2624250CE
+    - BANKNIFTY 20AUG26 51200 PE
+    - RELIANCE 27AUG26 1320 CE
+    """
     import re
+    from datetime import datetime
     sym_clean = symbol.upper().replace(".NS", "").replace(".BO", "").replace(" ", "").replace("_", "")
-    match = re.match(r"^([A-Z\^]+?)(\d{4,6})(CE|PE)$", sym_clean)
+    match = re.match(
+        r"^([A-Z\^]+?)(?:(\d{1,2}(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(?:\d{2}|\d{4})?))?(\d{3,6})(CE|PE)$",
+        sym_clean
+    )
     if match:
+        exp_str = match.group(2)
+        parsed_exp_date = None
+        if exp_str:
+            try:
+                if len(exp_str) in [7, 8]: # e.g. 27AUG26
+                    parsed_exp_date = datetime.strptime(exp_str, "%d%b%y").date().strftime("%Y-%m-%d")
+                elif len(exp_str) == 9: # e.g. 27AUG2026
+                    parsed_exp_date = datetime.strptime(exp_str, "%d%b%Y").date().strftime("%Y-%m-%d")
+            except Exception:
+                pass
         return {
             "underlying": match.group(1),
-            "strike": float(match.group(2)),
-            "option_type": match.group(3)
+            "expiry_tag": exp_str,
+            "expiry_date": parsed_exp_date,
+            "strike": float(match.group(3)),
+            "option_type": match.group(4)
         }
     return None
 
@@ -256,7 +279,7 @@ def get_live_quote(symbol: str, force_refresh: bool = False) -> dict:
     Fetch accurate real-time quote for an Indian stock, index, or option contract.
     Returns from hot in-memory streaming cache in 0.006ms with non-blocking async background refresh.
     """
-    # 0. Check if symbol is an Option contract (e.g. NIFTY 24500 CE)
+    # 0. Check if symbol is an Option contract (e.g. NIFTY 27AUG26 24250 CE)
     opt_info = parse_option_symbol(symbol)
     if opt_info:
         underlying = resolve_ticker(opt_info["underlying"])
@@ -266,19 +289,42 @@ def get_live_quote(symbol: str, force_refresh: bool = False) -> dict:
         prev_spot = float(u_quote.get("previous_close", spot_p))
         strike = opt_info["strike"]
         opt_type = opt_info["option_type"]
+        exp_date = opt_info.get("expiry_date")
         
         if spot_p > 0:
-            m_curr = (spot_p - strike) if opt_type == "CE" else (strike - spot_p)
-            m_prev = (prev_spot - strike) if opt_type == "CE" else (strike - prev_spot)
+            from src.strategies.options_greeks import BlackScholesEngine
+            t_years = BlackScholesEngine.calculate_dte_years(expiry_date=exp_date)
             
-            base_extrinsic = spot_p * 0.0075
-            curr_extrinsic = base_extrinsic * float(np.exp(-0.5 * (m_curr / (spot_p * 0.02)) ** 2))
-            prev_extrinsic = base_extrinsic * float(np.exp(-0.5 * (m_prev / (prev_spot * 0.02)) ** 2))
+            # Grounded volatility based on India VIX
+            vix_quote = get_live_quote("^INDIAVIX")
+            vix_val = float(vix_quote.get("price", 13.5) or 13.5)
+            vol = max(0.10, min(0.30, vix_val / 100.0))
             
-            curr_opt_p = round(max(2.0, max(0.0, m_curr) + curr_extrinsic), 2)
-            prev_opt_p = round(max(2.0, max(0.0, m_prev) + prev_extrinsic), 2)
+            curr_bs = BlackScholesEngine.calculate_option_price(
+                spot=spot_p,
+                strike=strike,
+                time_to_expiry_years=t_years,
+                risk_free_rate=0.07,
+                volatility=vol,
+                option_type=opt_type
+            )
+            prev_bs = BlackScholesEngine.calculate_option_price(
+                spot=prev_spot,
+                strike=strike,
+                time_to_expiry_years=t_years + (1.0 / 365.0),
+                risk_free_rate=0.07,
+                volatility=vol,
+                option_type=opt_type
+            )
+            intrinsic = max(0.0, spot_p - strike) if opt_type == "CE" else max(0.0, strike - spot_p)
+            prev_intrinsic = max(0.0, prev_spot - strike) if opt_type == "CE" else max(0.0, strike - prev_spot)
+            
+            min_time_val = max(5.0, 25.0 * math.sqrt(max(0.001, t_years * 365.0) / 7.0))
+            curr_opt_p = round(max(intrinsic + (min_time_val if curr_bs <= intrinsic else 0.0), curr_bs), 1)
+            prev_opt_p = round(max(prev_intrinsic + (min_time_val if prev_bs <= prev_intrinsic else 0.0), prev_bs), 1)
+            
             chg = round(curr_opt_p - prev_opt_p, 2)
-            chg_p = round((chg / prev_opt_p) * 100.0, 2) if prev_opt_p > 0 else 0.0
+            chg_p = round((chg / max(1.0, prev_opt_p)) * 100.0, 2)
             
             quote_dict = {
                 "symbol": symbol,

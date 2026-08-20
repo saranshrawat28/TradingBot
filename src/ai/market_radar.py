@@ -178,7 +178,8 @@ TASK:
                     real_entry, real_t1, real_t2, real_sl = cls.calculate_option_entry_and_targets(
                         spot_price=s_ltp,
                         strike=strike_val,
-                        option_type=opt_type
+                        option_type=opt_type,
+                        expiry_date=exp_details["recommended_expiry_date"]
                     )
                     
                     # Exact Spot Entry Triggers
@@ -241,26 +242,27 @@ TASK:
         spot_price: float,
         strike: float,
         option_type: str = "CE",
-        vix: float = 13.5
+        vix: float = 13.5,
+        expiry_date: Optional[str] = None
     ) -> Tuple[float, float, float, float]:
         """
         Calculates theoretical option premium using analytical Black-Scholes + intrinsic floor.
         Returns: (entry_premium, target_1, target_2, stop_loss)
         """
         from src.strategies.options_greeks import BlackScholesEngine
-        t_years = BlackScholesEngine.calculate_dte_years()
-        vol = max(0.11, vix / 100.0)
+        t_years = BlackScholesEngine.calculate_dte_years(expiry_date=expiry_date)
+        vol = max(0.10, min(0.30, vix / 100.0))
         bs_p = BlackScholesEngine.calculate_option_price(
             spot=spot_price,
             strike=strike,
             time_to_expiry_years=t_years,
+            risk_free_rate=0.07,
             volatility=vol,
             option_type=option_type
         )
         intrinsic = max(0.0, spot_price - strike) if option_type.upper() == "CE" else max(0.0, strike - spot_price)
-        # On 0DTE time value drops, intrinsic remains 100% solid
-        min_time_val = max(8.0, 30.0 * math.sqrt(max(0.001, t_years * 365.0) / 4.0)) if t_years < 0.015 else 28.0
-        premium = round(max(intrinsic + min_time_val, bs_p), 1)
+        min_time_val = max(5.0, 25.0 * math.sqrt(max(0.001, t_years * 365.0) / 7.0))
+        premium = round(max(intrinsic + (min_time_val if bs_p <= intrinsic else 0.0), bs_p), 1)
         t1 = round(premium * 1.35, 1)
         t2 = round(premium * 1.65, 1)
         sl = round(premium * 0.78, 1)
@@ -320,7 +322,8 @@ TASK:
                         entry_p, t1_p, t2_p, sl_p = cls.calculate_option_entry_and_targets(
                             spot_price=ltp,
                             strike=float(n_atm),
-                            option_type=opt_type
+                            option_type=opt_type,
+                            expiry_date=exp_details["recommended_expiry_date"]
                         )
                         gain_pct_str = "+35% to +65%"
                         cap_req = round(entry_p * lot_sz, 2)
