@@ -39,6 +39,7 @@ from src.ai import (
 )
 from src.ai.chat_assistant import TradingChatAssistant
 from src.ai.multi_agent_council import MultiAgentCouncil
+from src.ai.autonomous_daemon import AutonomousAIDaemon
 from src.engine.market_hunter_daemon import MarketHunterDaemon
 from src.engine.software_oco_manager import SoftwareOCOManager
 from src.brokers.zerodha_live import ZerodhaLiveBroker
@@ -1276,18 +1277,20 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
     saved_prov = saved_ai.get("provider", "gemini")
     
     provider_options = [
-        "🔵 Google Gemini (Gemini 3.1 Flash-Lite / Gemini 3 / Gemma 4 — Ultra-Fast & Sub-Second Latency)",
+        "🔵 Google Gemini (Gemini 3.1 Flash-Lite / Gemini 3 / Gemma 4 — Ultra Low Cost)",
+        "⚡ Groq (Llama 3.3 70B — Ultra Low Latency <250ms)",
         "🟣 Anthropic Claude (Claude 3.7 Sonnet — Latest Hybrid Reasoning)",
-        "🌙 Kimi / Moonshot AI (Ultra Fast & Long Context)",
         "🟢 OpenAI (GPT-4o / GPT-4o-mini)",
-        "🔴 DeepSeek (DeepSeek-Chat / Reasoner)"
+        "🔴 DeepSeek (DeepSeek-Chat / Reasoner)",
+        "🌙 Kimi / Moonshot AI (Ultra Fast & Long Context)",
+        "💻 Local Ollama (DeepSeek-R1 / Llama 3 — 100% Free & Offline)"
     ]
     
-    prov_to_idx = {"gemini": 0, "anthropic": 1, "kimi": 2, "openai": 3, "deepseek": 4}
+    prov_to_idx = {"gemini": 0, "groq": 1, "anthropic": 2, "openai": 3, "deepseek": 4, "kimi": 5, "ollama": 6}
     default_prov_idx = prov_to_idx.get(saved_prov, 0)
     
     # Active Connection Status Banner
-    if saved_ai.get("is_connected") and saved_ai.get("api_key"):
+    if saved_ai.get("is_connected") and (saved_ai.get("api_key") or saved_ai.get("provider") == "ollama"):
         st.markdown(f"""
         <div style='background: #111622; border: 1px solid #10b981; border-radius: 8px; padding: 12px 18px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;'>
             <div>
@@ -1311,6 +1314,9 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
             if "Gemini" in ai_provider:
                 prov_key = "gemini"
                 model_default = "gemini-3.1-flash-lite"
+            elif "Groq" in ai_provider:
+                prov_key = "groq"
+                model_default = "llama-3.3-70b-versatile"
             elif "Anthropic" in ai_provider:
                 prov_key = "anthropic"
                 model_default = "claude-3-7-sonnet-20250219"
@@ -1323,6 +1329,9 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
             elif "DeepSeek" in ai_provider:
                 prov_key = "deepseek"
                 model_default = "deepseek-chat"
+            elif "Ollama" in ai_provider:
+                prov_key = "ollama"
+                model_default = "deepseek-r1:latest"
             else:
                 prov_key = "gemini"
                 model_default = "gemini-3.1-flash-lite"
@@ -1697,40 +1706,65 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
 
     st.markdown("---")
 
-    # Section 5: Hands-Free Auto-Pilot Bot & Continuous Background Engine
-    st.subheader("🤖 Hands-Free Auto-Pilot Trading Bot (Continuous 5m Execution)")
-    st.caption("Runs an autonomous background loop: monitors 5-minute candle closes, auto-dispatches AI trades with conviction >= 8.0/10, dynamically trails stop-losses, and squares off at 3:15 PM IST.")
+    # Section 5: Autonomous AI Auto-Pilot Bot & Continuous Background Engine
+    st.subheader("🤖 Autonomous AI Auto-Pilot Trading Daemon (Continuous Execution)")
+    st.caption("Background execution worker: continuously monitors live market ticks & candle closes, autonomously executes verified setups (conviction >= 8.0/10), places hard safety SL-M orders, and auto-squares off at 3:15 PM IST.")
     
-    daemon = AutoPilotDaemon.get_instance()
-    llm_instance_current = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key)
-    daemon.configure(
-        llm_client=llm_instance_current,
-        guardrails=ai_guardrails,
-        broker=active_ai_broker,
-        is_live_mode=is_live_selected,
-        min_auto_confidence=8.0
-    )
-    d_status = daemon.get_status()
+    ai_daemon = AutonomousAIDaemon.get_instance()
+    llm_instance_current = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key) if (ai_api_key or prov_key == "ollama") else None
     
     d_col1, d_col2, d_col3, d_col4 = st.columns([2, 1.5, 1.5, 1.5])
     with d_col1:
-        if d_status["is_running"]:
-            if st.button("⏸️ Pause Auto-Pilot Engine", type="secondary", use_container_width=True):
-                daemon.stop()
+        if ai_daemon.is_active:
+            if st.button("⏸️ Stop Autonomous Auto-Pilot Daemon", type="secondary", use_container_width=True):
+                ai_daemon.stop()
                 st.rerun()
         else:
-            if st.button("▶️ Start Autonomous Auto-Pilot Bot", type="primary", use_container_width=True):
-                if not ai_api_key or len(ai_api_key.strip()) < 5:
-                    st.warning("⚠️ Enter your AI API Key in Step 1 first!")
+            if st.button("🚀 Start Autonomous Auto-Pilot Daemon", type="primary", use_container_width=True):
+                if not llm_instance_current or not llm_instance_current.is_configured():
+                    st.warning("⚠️ Please configure your AI Provider in Step 1 first!")
                 else:
-                    daemon.start()
+                    ai_daemon.start(
+                        llm_client=llm_instance_current,
+                        guardrails=ai_guardrails,
+                        broker=active_ai_broker,
+                        is_live_mode=is_live_selected,
+                        interval=20
+                    )
                     st.rerun()
     with d_col2:
-        st.metric("Auto-Pilot Status", "🟢 ACTIVE" if d_status["is_running"] else "⏸️ PAUSED")
+        st.metric("Daemon Status", "🟢 ACTIVE" if ai_daemon.is_active else "⚪ IDLE")
     with d_col3:
-        st.metric("5m Scans Done", f"{d_status['scans_count']}")
+        st.metric("Scan Frequency", f"{ai_daemon.scan_interval}s")
     with d_col4:
-        st.metric("Orders Filled", f"{d_status['orders_executed']}")
+        st.metric("Auto-Trades Filled", f"{ai_daemon.trades_executed_today}")
+        
+    # Real-Time AI Thought Stream (Zero-lag auto-updating fragment)
+    @st.fragment(run_every=2)
+    def render_ai_thought_stream_fragment():
+        d_inst = AutonomousAIDaemon.get_instance()
+        thoughts = d_inst.get_thought_stream()
+        if thoughts:
+            st.markdown("**🧠 Live AI Internal Thought & Action Stream** *(Auto-updating real-time feed)*")
+            thought_html_lines = []
+            for t in thoughts[:12]:
+                lvl = t.get("level", "INFO")
+                color = "#10b981" if lvl == "EXECUTE" else "#38bdf8" if lvl == "SETUP" else "#f43f5e" if lvl == "RISK" else "#f59e0b" if lvl == "EXIT" else "#a855f7" if lvl == "MANAGEMENT" else "#94a3b8"
+                sym_tag = f"[{t.get('symbol')}]" if t.get('symbol') else ""
+                thought_html_lines.append(
+                    f"<div style='margin-bottom: 4px; line-height: 1.4;'><span style='color: #64748b; font-size: 0.78rem;'>{t.get('time')}</span> "
+                    f"<span style='color: {color}; font-weight: 700; font-size: 0.78rem;'>[{lvl}]</span> "
+                    f"<span style='color: #cbd5e1; font-weight: 600; font-size: 0.82rem;'>{sym_tag}</span> "
+                    f"<span style='color: #f1f5f9; font-size: 0.84rem;'>{t.get('message')}</span></div>"
+                )
+            st.markdown(
+                f"""<div style='background: #090d16; border: 1px solid #1e293b; border-radius: 8px; padding: 12px 16px; font-family: "JetBrains Mono", monospace; max-height: 220px; overflow-y: auto;'>
+                {''.join(thought_html_lines)}
+                </div>""",
+                unsafe_allow_html=True
+            )
+            
+    render_ai_thought_stream_fragment()
 
     # Section 6: Smart Active Positions (50/50 Profit Booker & Trailing SL Visualizer)
     st.markdown("---")

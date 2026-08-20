@@ -16,11 +16,13 @@ class LLMClient:
     """
     
     SUPPORTED_PROVIDERS = {
-        "anthropic": ["claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
         "gemini": ["gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-flash-latest", "gemini-3.1-pro-preview", "gemma-4-26b-a4b-it"],
-        "kimi": ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
+        "groq": ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"],
+        "anthropic": ["claude-3-7-sonnet-20250219", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
         "openai": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
-        "deepseek": ["deepseek-chat", "deepseek-reasoner"]
+        "deepseek": ["deepseek-chat", "deepseek-reasoner"],
+        "kimi": ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"],
+        "ollama": ["deepseek-r1:latest", "llama3:latest", "mistral:latest", "qwen2.5:latest"]
     }
     
     def __init__(
@@ -35,18 +37,22 @@ class LLMClient:
         self.timeout = timeout
         self.api_key = api_key.strip() if api_key else self._get_env_api_key(self.provider)
         self.last_call_time = 0.0
-        self.min_call_interval = 1.0 # Minimum seconds between calls
+        self.min_call_interval = 0.2 if self.provider == "groq" else 1.0 # High speed for Groq
 
     def _get_env_api_key(self, provider: str) -> str:
         env_map = {
-            "anthropic": "ANTHROPIC_API_KEY",
             "gemini": "GEMINI_API_KEY",
-            "kimi": "MOONSHOT_API_KEY",
+            "groq": "GROQ_API_KEY",
+            "anthropic": "ANTHROPIC_API_KEY",
             "openai": "OPENAI_API_KEY",
-            "deepseek": "DEEPSEEK_API_KEY"
+            "deepseek": "DEEPSEEK_API_KEY",
+            "kimi": "MOONSHOT_API_KEY",
+            "ollama": "OLLAMA_API_KEY"
         }
         key_name = env_map.get(provider, "")
         val = os.getenv(key_name, "")
+        if not val and provider == "ollama":
+            return "ollama-local-ok"
         if not val:
             try:
                 from src.utils.storage import load_ai_settings
@@ -114,6 +120,12 @@ class LLMClient:
                 return self._call_anthropic(system_prompt, user_prompt)
             elif self.provider == "gemini":
                 return self._call_gemini(system_prompt, user_prompt)
+            elif self.provider == "groq":
+                return self._call_openai_compatible(
+                    base_url="https://api.groq.com/openai/v1",
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt
+                )
             elif self.provider == "kimi" or self.provider == "moonshot":
                 return self._call_openai_compatible(
                     base_url="https://api.moonshot.cn/v1",
@@ -132,6 +144,8 @@ class LLMClient:
                     system_prompt=system_prompt,
                     user_prompt=user_prompt
                 )
+            elif self.provider == "ollama":
+                return self._call_ollama(system_prompt, user_prompt)
             else:
                 raise ValueError(f"Unsupported LLM provider: {self.provider}")
         except Exception as e:
@@ -277,3 +291,24 @@ class LLMClient:
         if choices and len(choices) > 0:
             return choices[0].get("message", {}).get("content", "")
         return ""
+
+    def _call_ollama(self, system_prompt: str, user_prompt: str) -> str:
+        """Calls local Ollama instance (default http://localhost:11434) with zero external API dependencies."""
+        ollama_url = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+        payload = {
+            "model": self.model if self.model else "deepseek-r1:latest",
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "stream": False,
+            "format": "json",
+            "options": {
+                "temperature": 0.1
+            }
+        }
+        resp = requests.post(f"{ollama_url}/api/chat", json=payload, timeout=self.timeout)
+        if resp.status_code != 200:
+            raise RuntimeError(f"Ollama HTTP {resp.status_code}: {resp.text}")
+        data = resp.json()
+        return data.get("message", {}).get("content", "")
