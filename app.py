@@ -1641,6 +1641,10 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                             action_badge_bg = "rgba(16, 185, 129, 0.15)" if is_bull else "rgba(244, 63, 94, 0.15)"
                             action_badge_color = "#10b981" if is_bull else "#f43f5e"
                             
+                            sl_pct_calc = abs(round(((entry_val - sl_val) / max(0.01, entry_val)) * 100, 1))
+                            t1_pct_calc = abs(round(((t1_val - entry_val) / max(0.01, entry_val)) * 100, 1))
+                            t2_pct_calc = abs(round(((t2_val - entry_val) / max(0.01, entry_val)) * 100, 1))
+                            
                             st.markdown(f"""
                             <div style='background: linear-gradient(135deg, #0d121f 0%, #111827 100%); border: 1px solid #1e293b; border-left: 5px solid {card_border}; border-radius: 12px; padding: 18px 22px; margin-bottom: 16px;'>
                                 <!-- Header Row -->
@@ -1668,21 +1672,21 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                                     <div style='background: #090d16; border: 1px solid rgba(244, 63, 94, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
                                         <div style='color: #f43f5e; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🛑 STOP-LOSS EXIT</div>
                                         <div style='color: #f43f5e; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{sl_val:,.2f}</div>
-                                        <div style='color: #f43f5e; font-size: 0.75rem; font-weight: 700;'>Exit on -22% (-₹{max_risk_inr:,.0f})</div>
+                                        <div style='color: #f43f5e; font-size: 0.75rem; font-weight: 700;'>Exit on -{sl_pct_calc}% (-₹{max_risk_inr:,.0f})</div>
                                     </div>
 
                                     <!-- Box 3: TARGET 1 EXIT (50%) -->
                                     <div style='background: #090d16; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
                                         <div style='color: #10b981; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🎯 TARGET 1 EXIT (50%)</div>
                                         <div style='color: #10b981; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{t1_val:,.2f}</div>
-                                        <div style='color: #10b981; font-size: 0.75rem; font-weight: 700;'>Book 50% (+35% / +₹{exp_gain_inr:,.0f})</div>
+                                        <div style='color: #10b981; font-size: 0.75rem; font-weight: 700;'>Book 50% (+{t1_pct_calc}% / +₹{exp_gain_inr:,.0f})</div>
                                     </div>
 
                                     <!-- Box 4: TARGET 2 EXIT (100%) -->
                                     <div style='background: #090d16; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
                                         <div style='color: #10b981; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🚀 TARGET 2 EXIT (100%)</div>
                                         <div style='color: #10b981; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{t2_val:,.2f}</div>
-                                        <div style='color: #10b981; font-size: 0.75rem; font-weight: 700;'>Full Exit (+65% / +₹{round(abs(t2_val-entry_val)*o_lot, 0):,.0f})</div>
+                                        <div style='color: #10b981; font-size: 0.75rem; font-weight: 700;'>Full Exit (+{t2_pct_calc}% / +₹{round(abs(t2_val-entry_val)*o_lot, 0):,.0f})</div>
                                     </div>
                                 </div>
 
