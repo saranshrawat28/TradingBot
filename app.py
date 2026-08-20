@@ -1560,11 +1560,11 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                             o_contract = opp.get("option_contract", "N/A")
                             o_act = opp.get("action", "BUY_CALL")
                             o_conf = float(opp.get("confidence_score", 0.0))
-                            o_horizon = opp.get("time_horizon", "Intraday (Exit by 3:15 PM)")
-                            o_setup = opp.get("setup_name", "Momentum Setup")
+                            o_horizon = opp.get("time_horizon", "Exit by 3:15 PM IST")
+                            o_setup = opp.get("setup_name", "Momentum Breakout")
                             o_gain = opp.get("expected_gain_pct", "+35% to +65%")
                             o_reason = opp.get("catalyst_reasoning", "")
-                            o_exp_str = opp.get("expiry_str", "27-AUG-2026 (Monthly Expiry)")
+                            o_exp_str = opp.get("expiry_str", "27-AUG-2026")
                             o_lot = int(opp.get("lot_size", 75))
                             
                             # Fetch Live Quote for Underlying and Option Contract
@@ -1575,17 +1575,16 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                             
                             if is_opt:
                                 c_quote = get_live_quote(o_contract)
-                                live_p = float(c_quote.get("price", opp.get("entry_price", 135.0)))
+                                live_p = float(c_quote.get("price", opp.get("entry_price", 132.0)))
                                 entry_val = live_p
                                 sl_val = round(entry_val * 0.78, 1)
                                 t1_val = round(entry_val * 1.35, 1)
                                 t2_val = round(entry_val * 1.65, 1)
                                 cap_val = round(entry_val * o_lot, 2)
-                                is_bull = "CALL" in o_act
+                                is_bull = "CALL" in o_act or "CE" in o_contract
                                 sp_trig_val = round(u_spot + (10.0 if is_bull else -10.0), 1)
-                                sp_sl_val = round(u_spot - (60.0 if is_bull else -60.0), 1)
-                                sp_t1_val = round(u_spot + (110.0 if is_bull else -110.0), 1)
-                                sp_t2_val = round(u_spot + (210.0 if is_bull else -210.0), 1)
+                                max_risk_inr = round(abs(entry_val - sl_val) * o_lot, 0)
+                                exp_gain_inr = round(abs(t1_val - entry_val) * o_lot, 0)
                             else:
                                 live_p = u_spot
                                 entry_val = float(opp.get("entry_price", u_spot))
@@ -1594,84 +1593,103 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                                 t2_val = float(opp.get("target_2", u_spot * 1.04))
                                 cap_val = round(entry_val * o_lot, 2)
                                 sp_trig_val = entry_val
-                                sp_sl_val = sl_val
-                                sp_t1_val = t1_val
-                                sp_t2_val = t2_val
+                                max_risk_inr = round(abs(entry_val - sl_val) * o_lot, 0)
+                                exp_gain_inr = round(abs(t1_val - entry_val) * o_lot, 0)
+                                is_bull = "BUY" in o_act
                                 
                             diff_pct = ((live_p - entry_val) / max(0.01, entry_val)) * 100.0 if entry_val > 0 else 0.0
                             if abs(diff_pct) <= 1.5:
-                                zone_text = f"🟢 IN BUY ZONE (₹{live_p:,.1f})"
-                                zone_badge = "badge-bull"
+                                zone_text = "🟢 READY TO ENTER"
+                                zone_color = "#10b981"
                             elif diff_pct > 1.5:
-                                zone_text = f"⚡ RUNNING (+{diff_pct:.1f}% from Entry)"
-                                zone_badge = "badge-sky"
+                                zone_text = f"⚡ RUNNING (+{diff_pct:.1f}%)"
+                                zone_color = "#38bdf8"
                             else:
-                                zone_text = f"⏳ DISCOUNT ZONE ({diff_pct:.1f}% vs Entry)"
-                                zone_badge = "badge-neutral"
+                                zone_text = f"⏳ DISCOUNT ({diff_pct:.1f}%)"
+                                zone_color = "#94a3b8"
                             
-                            card_border = "#10b981" if "CALL" in o_act or "STOCK" in o_act else "#f43f5e"
-                            display_title = f"#{o_rank} {o_contract if is_opt else o_sym} ({o_act})"
-                            
-                            # Underlying Spot & Trigger telemetry strip
-                            if is_opt:
-                                spot_telemetry_html = f"""
-                                <div style='background: #0b0f19; border: 1px solid #1e293b; border-radius: 6px; padding: 8px 12px; margin: 8px 0; font-family: "JetBrains Mono", monospace; font-size: 0.82rem; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px;'>
-                                    <div>🇮🇳 <strong>{o_sym.replace('^','')} Spot:</strong> <span style='color: #f8fafc; font-weight: 700;'>₹{u_spot:,.2f}</span> (<span style='color: {"#10b981" if u_chg >= 0 else "#f43f5e"};'>{'+' if u_chg >= 0 else ''}{u_chg:.2f}%</span>)</div>
-                                    <div>⚡ <strong>Entry Trigger:</strong> <span style='color: #38bdf8;'>Spot {'≥' if 'CALL' in o_act else '≤'} ₹{sp_trig_val:,.1f}</span></div>
-                                    <div>📍 <strong>Spot SL:</strong> <span style='color: #f43f5e;'>₹{sp_sl_val:,.1f}</span></div>
-                                    <div>🎯 <strong>Spot T1:</strong> <span style='color: #10b981;'>₹{sp_t1_val:,.1f}</span> | <strong>T2:</strong> <span style='color: #10b981;'>₹{sp_t2_val:,.1f}</span></div>
-                                </div>
-                                """
-                            else:
-                                spot_telemetry_html = ""
+                            card_border = "#10b981" if is_bull else "#f43f5e"
+                            contract_title = o_contract if is_opt else o_sym
+                            action_badge_bg = "rgba(16, 185, 129, 0.15)" if is_bull else "rgba(244, 63, 94, 0.15)"
+                            action_badge_color = "#10b981" if is_bull else "#f43f5e"
                             
                             st.markdown(f"""
-                            <div style='background: #111622; border-left: 4px solid {card_border}; border-radius: 8px; padding: 14px 18px; margin-bottom: 12px; border-top: 1px solid #1e293b; border-right: 1px solid #1e293b; border-bottom: 1px solid #1e293b;'>
-                                <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;'>
-                                    <span style='font-size: 1.15rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif;'>{display_title}</span>
-                                    <div style='display: flex; gap: 6px; align-items: center; flex-wrap: wrap;'>
-                                        <span class='badge-sky' style='font-size: 0.72rem; padding: 2px 7px;'>📅 EXPIRY: {o_exp_str}</span>
-                                        <span class='badge-neutral' style='font-size: 0.72rem; padding: 2px 7px;'>📦 1 LOT: {o_lot} QTY (₹{cap_val:,.0f})</span>
-                                        <span class='{zone_badge}' style='font-size: 0.72rem; padding: 2px 7px;'>{zone_text}</span>
-                                        <span class='badge-bull' style='font-size: 0.72rem; padding: 2px 7px;'>⭐ CONVICTION: {o_conf:.1f}/10</span>
+                            <div style='background: linear-gradient(135deg, #0d121f 0%, #111827 100%); border: 1px solid #1e293b; border-left: 5px solid {card_border}; border-radius: 12px; padding: 18px 22px; margin-bottom: 16px;'>
+                                <!-- Header Row -->
+                                <div style='display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 12px; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;'>
+                                    <div>
+                                        <span style='font-size: 1.25rem; font-weight: 800; color: #ffffff; font-family: "Outfit", sans-serif;'>#{o_rank} {contract_title}</span>
+                                        <span style='background: {action_badge_bg}; color: {action_badge_color}; border: 1px solid {action_badge_color}40; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px; margin-left: 8px;'>{o_act}</span>
+                                    </div>
+                                    <div style='display: flex; gap: 10px; align-items: center;'>
+                                        <span style='color: #94a3b8; font-size: 0.82rem;'>📅 Expiry: <strong style='color: #f1f5f9;'>{o_exp_str}</strong></span>
+                                        <span style='background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px;'>⭐ {o_conf:.1f}/10 Conviction</span>
                                     </div>
                                 </div>
-                                {spot_telemetry_html}
-                                <div style='color: #38bdf8; font-size: 0.88rem; font-weight: 600; margin: 4px 0;'>
-                                    🎯 Setup: {o_setup} &bull; ⏱️ Time Horizon: <strong>{o_horizon}</strong> &bull; Target Return: <span style='color: #10b981;'>{o_gain}</span>
+
+                                <!-- 4-Box Telemetry Grid -->
+                                <div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 14px;'>
+                                    <!-- Box 1: Live Market Price -->
+                                    <div style='background: #090d16; border: 1px solid #1e293b; border-radius: 8px; padding: 12px; text-align: center;'>
+                                        <div style='color: #94a3b8; font-size: 0.74rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;'>⚡ Live Price (LTP)</div>
+                                        <div style='color: #38bdf8; font-size: 1.45rem; font-weight: 800; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{live_p:,.2f}</div>
+                                        <div style='color: {zone_color}; font-size: 0.75rem; font-weight: 600;'>{zone_text}</div>
+                                    </div>
+
+                                    <!-- Box 2: Suggested Entry -->
+                                    <div style='background: #090d16; border: 1px solid #1e293b; border-radius: 8px; padding: 12px; text-align: center;'>
+                                        <div style='color: #94a3b8; font-size: 0.74rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;'>🎯 Entry Zone</div>
+                                        <div style='color: #f8fafc; font-size: 1.45rem; font-weight: 800; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{entry_val:,.2f}</div>
+                                        <div style='color: #94a3b8; font-size: 0.75rem;'>Trigger: Spot {'≥' if is_bull else '≤'} ₹{sp_trig_val:,.0f}</div>
+                                    </div>
+
+                                    <!-- Box 3: Stop-Loss -->
+                                    <div style='background: #090d16; border: 1px solid rgba(244, 63, 94, 0.3); border-radius: 8px; padding: 12px; text-align: center;'>
+                                        <div style='color: #f43f5e; font-size: 0.74rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;'>🛑 Safety Stop-Loss</div>
+                                        <div style='color: #f43f5e; font-size: 1.45rem; font-weight: 800; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{sl_val:,.2f}</div>
+                                        <div style='color: #f43f5e; font-size: 0.75rem; font-weight: 600;'>-22.0% (-₹{max_risk_inr:,.0f}/lot)</div>
+                                    </div>
+
+                                    <!-- Box 4: Profit Targets -->
+                                    <div style='background: #090d16; border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 8px; padding: 12px; text-align: center;'>
+                                        <div style='color: #10b981; font-size: 0.74rem; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px;'>🚀 Targets (T1 | T2)</div>
+                                        <div style='color: #10b981; font-size: 1.25rem; font-weight: 800; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{t1_val:,.0f} &bull; ₹{t2_val:,.0f}</div>
+                                        <div style='color: #10b981; font-size: 0.75rem; font-weight: 600;'>+35% / +65% (+₹{exp_gain_inr:,.0f})</div>
+                                    </div>
                                 </div>
-                                <div style='color: #cbd5e1; font-size: 0.85rem; margin-top: 4px; line-height: 1.4;'>🧠 <strong>Institutional Rationale:</strong> {o_reason}</div>
+
+                                <!-- Quick Specs Strip -->
+                                <div style='display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.7); border: 1px solid #1e293b; border-radius: 6px; padding: 8px 14px; font-size: 0.82rem; color: #cbd5e1; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;'>
+                                    <div>📦 <strong>1 Lot:</strong> {o_lot} Shares (Capital: <strong style='color: #38bdf8;'>₹{cap_val:,.0f}</strong>)</div>
+                                    <div>🇮🇳 <strong>{o_sym.replace('^','')} Spot:</strong> ₹{u_spot:,.2f} (<span style='color: {"#10b981" if u_chg >= 0 else "#f43f5e"};'>{'+' if u_chg >= 0 else ''}{u_chg:.2f}%</span>)</div>
+                                    <div>⏱️ <strong>Horizon:</strong> {o_horizon}</div>
+                                </div>
+
+                                <!-- Setup Rationale -->
+                                <div style='color: #94a3b8; font-size: 0.84rem; line-height: 1.4;'>
+                                    🧠 <strong style='color: #e2e8f0;'>Setup:</strong> {o_setup} &mdash; {o_reason}
+                                </div>
                             </div>
                             """, unsafe_allow_html=True)
                             
-                            # 5 Clean Metric Columns & Execution Button
-                            c_live, c_m1, c_m2, c_m3, c_m4, c_btn = st.columns([1.3, 1.1, 1.1, 1.1, 1.1, 1.8])
-                            c_live.metric("⚡ Current Live LTP", f"₹{live_p:,.2f}")
-                            c_m1.metric("🎯 Option Entry", f"₹{entry_val:,.2f}")
-                            c_m2.metric("🛑 Safety SL", f"₹{sl_val:,.2f}", f"-{round(((entry_val-sl_val)/max(1,entry_val))*100,1)}%")
-                            c_m3.metric("🎯 Target 1", f"₹{t1_val:,.2f}", f"+{round(((t1_val-entry_val)/max(1,entry_val))*100,1)}%")
-                            c_m4.metric("🚀 Target 2", f"₹{t2_val:,.2f}", f"+{round(((t2_val-entry_val)/max(1,entry_val))*100,1)}%")
-                            
-                            with c_btn:
-                                st.write("")
-                                if st.button(f"🚀 Execute Trade #{o_rank} (₹{live_p:,.1f})", key=f"btn_exec_opp_{i}", type="primary", use_container_width=True):
-                                    llm_instance = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key) if (ai_api_key and len(ai_api_key.strip()) >= 5) else None
-                                    agent = AITradingAgent(
-                                        llm_client=llm_instance,
-                                        guardrails=ai_guardrails,
-                                        broker=active_ai_broker,
-                                        is_live_mode=is_live_selected
-                                    )
-                                    # Update entry to live price for exact execution
-                                    opp_exec = dict(opp)
-                                    opp_exec["entry_price"] = live_p
-                                    exec_outcome = agent.execute_radar_opportunity(opp_exec)
-                                    if exec_outcome.get("status") == "EXECUTED":
-                                        st.success(f"✅ Trade Executed! Symbol: `{exec_outcome.get('symbol')}` @ ₹{live_p:,.2f}")
-                                        st.rerun()
-                                    else:
-                                        st.error(f"❌ Execution Blocked: {exec_outcome.get('message')}")
-                            st.divider()
+                            # Clean 1-Click Execution Button
+                            if st.button(f"🚀 1-Click Execute #{o_rank}: Buy {contract_title} @ ₹{live_p:,.1f} (₹{cap_val:,.0f})", key=f"btn_exec_opp_{i}", type="primary", use_container_width=True):
+                                llm_instance = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key) if (ai_api_key and len(ai_api_key.strip()) >= 5) else None
+                                agent = AITradingAgent(
+                                    llm_client=llm_instance,
+                                    guardrails=ai_guardrails,
+                                    broker=active_ai_broker,
+                                    is_live_mode=is_live_selected
+                                )
+                                opp_exec = dict(opp)
+                                opp_exec["entry_price"] = live_p
+                                exec_outcome = agent.execute_radar_opportunity(opp_exec)
+                                if exec_outcome.get("status") == "EXECUTED":
+                                    st.success(f"✅ Trade Executed! Symbol: `{exec_outcome.get('symbol')}` @ ₹{live_p:,.2f}")
+                                    st.rerun()
+                                else:
+                                    st.error(f"❌ Execution Blocked: {exec_outcome.get('message')}")
+                            st.write("")
                 elif r_data.get("status") == "ERROR":
                     st.error(f"❌ {r_data.get('message')}")
                     
