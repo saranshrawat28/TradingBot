@@ -174,11 +174,20 @@ TASK:
                         strike=strike_val,
                         option_type=opt_type
                     )
+                    o["spot_price"] = s_ltp
+                    o["spot_change_pct"] = float(quote.get("change_pct", 0.0))
                     o["entry_price"] = real_entry
+                    o["current_price"] = real_entry
                     o["target_1"] = real_t1
                     o["target_2"] = real_t2
                     o["stop_loss"] = real_sl
                     o["expected_gain_pct"] = "+35% to +65%"
+                else:
+                    quote = get_live_quote(sym_up)
+                    e_ltp = float(quote.get("price", o.get("entry_price", 100.0)))
+                    o["spot_price"] = e_ltp
+                    o["spot_change_pct"] = float(quote.get("change_pct", 0.0))
+                    o["current_price"] = e_ltp
                 calibrated_opps.append(o)
                 
             res_dict = {
@@ -287,7 +296,10 @@ TASK:
                         "action": action,
                         "setup_name": analysis.get("setup_grade_title", "Institutional Breakout"),
                         "time_horizon": "30 to 90 mins (Intraday)",
+                        "spot_price": ltp,
+                        "spot_change_pct": float(quote.get("change_pct", 0.0)),
                         "entry_price": entry_p,
+                        "current_price": entry_p,
                         "stop_loss": sl_p,
                         "target_1": t1_p,
                         "target_2": t2_p,
