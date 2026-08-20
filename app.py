@@ -1527,21 +1527,21 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                 llm_instance = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key) if (ai_api_key and len(ai_api_key.strip()) >= 5) else None
                 radar_res = MarketRadarScanner.scan_market(llm_client=llm_instance, min_confidence=7.0)
                 st.session_state["last_radar_scan"] = radar_res
-                    
-                    # Auto-Dispatch if enabled and confidence >= 8.0
-                    if auto_radar_dispatch and radar_res.get("status") == "SUCCESS":
-                        opps_list = radar_res.get("opportunities", [])
-                        if opps_list and float(opps_list[0].get("confidence_score", 0)) >= 8.0:
-                            top_opp = opps_list[0]
-                            agent_auto = AITradingAgent(
-                                llm_client=llm_instance,
-                                guardrails=ai_guardrails,
-                                broker=active_ai_broker,
-                                is_live_mode=is_live_selected
-                            )
-                            auto_outcome = agent_auto.execute_radar_opportunity(top_opp)
-                            if auto_outcome.get("status") == "EXECUTED":
-                                st.success(f"🚀 **Auto-Pilot Executed:** {top_opp.get('action')} on {top_opp.get('symbol')}!")
+                
+                # Auto-Dispatch if enabled and confidence >= 8.0
+                if auto_radar_dispatch and radar_res.get("status") == "SUCCESS":
+                    opps_list = radar_res.get("opportunities", [])
+                    if opps_list and float(opps_list[0].get("confidence_score", 0)) >= 8.0:
+                        top_opp = opps_list[0]
+                        agent_auto = AITradingAgent(
+                            llm_client=llm_instance,
+                            guardrails=ai_guardrails,
+                            broker=active_ai_broker,
+                            is_live_mode=is_live_selected
+                        )
+                        auto_outcome = agent_auto.execute_radar_opportunity(top_opp)
+                        if auto_outcome.get("status") == "EXECUTED":
+                            st.success(f"🚀 **Auto-Pilot Executed:** {top_opp.get('action')} on {top_opp.get('symbol')}!")
                     
         # Render Opportunity Cards if scan data exists
         if "last_radar_scan" in st.session_state:
@@ -1815,49 +1815,49 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
             
             with st.spinner(f"Analyzing live market structure for {clean_target}..."):
                 telemetry = agent.evaluate_and_execute(clean_target)
-                    
-                    st.markdown("### 📡 Live AI Telemetry Feed")
-                    
-                    # Telemetry Overview Banner
-                    act_color = "#10b981" if "BUY" in str(telemetry.get("action")) else ("#f43f5e" if "EXIT" in str(telemetry.get("action")) else "#94a3b8")
-                    g_color = "#10b981" if telemetry.get("guardrail_status") == "APPROVED" else "#f43f5e"
-                    
-                    t_col1, t_col2, t_col3 = st.columns([1.5, 1.5, 3])
-                    with t_col1:
-                        st.markdown(f"""
-                        <div style='background: #111622; border: 2px solid {act_color}; border-radius: 8px; padding: 14px; text-align: center;'>
-                            <div style='font-size: 0.75rem; color: #94a3b8; text-transform: uppercase;'>AI Action Proposed</div>
-                            <div style='font-size: 1.4rem; font-weight: 800; color: {act_color}; margin: 4px 0; font-family: "Outfit", sans-serif;'>{telemetry.get('action')}</div>
-                            <div style='font-size: 0.9rem; color: #f8fafc;'>Confidence: <strong class='mono-num'>{telemetry.get('confidence')}/10</strong></div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    with t_col2:
-                        st.markdown(f"""
-                        <div style='background: #111622; border: 2px solid {g_color}; border-radius: 8px; padding: 14px; text-align: center;'>
-                            <div style='font-size: 0.75rem; color: #94a3b8; text-transform: uppercase;'>Guardrail Layer</div>
-                            <div style='font-size: 1.4rem; font-weight: 800; color: {g_color}; margin: 4px 0; font-family: "Outfit", sans-serif;'>{telemetry.get('guardrail_status')}</div>
-                            <div style='font-size: 0.85rem; color: #94a3b8;'>Latency: <span class='mono-num'>{telemetry.get('latency_sec')}s</span></div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                    with t_col3:
-                        st.markdown(f"""
-                        <div style='background: #111622; border: 1px solid #1e293b; border-radius: 8px; padding: 14px;'>
-                            <div style='font-size: 0.85rem; font-weight: 700; color: #38bdf8; margin-bottom: 4px;'>🧠 AI Institutional Rationale:</div>
-                            <div style='font-size: 0.92rem; color: #f8fafc; line-height: 1.4;'>{telemetry.get('reasoning')}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                    # Execution Result Box
-                    exec_res = telemetry.get("execution", {})
-                    if exec_res.get("status") in ["FILLED", "SUCCESS"]:
-                        exec_p = float(exec_res.get("price") or 0.0)
-                        st.success(f"🚀 **Order Executed:** {exec_res.get('side')} {exec_res.get('quantity')}x `{exec_res.get('symbol')}` @ ₹{exec_p:.2f} (Tag: `{exec_res.get('idempotency_tag', 'N/A')}`)")
-                    elif exec_res.get("status") == "SKIPPED":
-                        st.info(f"ℹ️ **Action Skipped by Guardrails:** {exec_res.get('message')}")
-                    else:
-                        st.warning(f"Order Status: {exec_res}")
-            except Exception as eval_err:
-                st.error(f"❌ **AI Evaluation Error:** {str(eval_err)}")
+                
+            st.markdown("### 📡 Live AI Telemetry Feed")
+            
+            # Telemetry Overview Banner
+            act_color = "#10b981" if "BUY" in str(telemetry.get("action")) else ("#f43f5e" if "EXIT" in str(telemetry.get("action")) else "#94a3b8")
+            g_color = "#10b981" if telemetry.get("guardrail_status") == "APPROVED" else "#f43f5e"
+            
+            t_col1, t_col2, t_col3 = st.columns([1.5, 1.5, 3])
+            with t_col1:
+                st.markdown(f"""
+                <div style='background: #111622; border: 2px solid {act_color}; border-radius: 8px; padding: 14px; text-align: center;'>
+                    <div style='font-size: 0.75rem; color: #94a3b8; text-transform: uppercase;'>AI Action Proposed</div>
+                    <div style='font-size: 1.4rem; font-weight: 800; color: {act_color}; margin: 4px 0; font-family: "Outfit", sans-serif;'>{telemetry.get('action')}</div>
+                    <div style='font-size: 0.9rem; color: #f8fafc;'>Confidence: <strong class='mono-num'>{telemetry.get('confidence')}/10</strong></div>
+                </div>
+                """, unsafe_allow_html=True)
+            with t_col2:
+                st.markdown(f"""
+                <div style='background: #111622; border: 2px solid {g_color}; border-radius: 8px; padding: 14px; text-align: center;'>
+                    <div style='font-size: 0.75rem; color: #94a3b8; text-transform: uppercase;'>Guardrail Layer</div>
+                    <div style='font-size: 1.4rem; font-weight: 800; color: {g_color}; margin: 4px 0; font-family: "Outfit", sans-serif;'>{telemetry.get('guardrail_status')}</div>
+                    <div style='font-size: 0.85rem; color: #94a3b8;'>Latency: <span class='mono-num'>{telemetry.get('latency_sec')}s</span></div>
+                </div>
+                """, unsafe_allow_html=True)
+            with t_col3:
+                st.markdown(f"""
+                <div style='background: #111622; border: 1px solid #1e293b; border-radius: 8px; padding: 14px;'>
+                    <div style='font-size: 0.85rem; font-weight: 700; color: #38bdf8; margin-bottom: 4px;'>🧠 AI Institutional Rationale:</div>
+                    <div style='font-size: 0.92rem; color: #f8fafc; line-height: 1.4;'>{telemetry.get('reasoning')}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+            # Execution Result Box
+            exec_res = telemetry.get("execution", {})
+            if exec_res.get("status") in ["FILLED", "SUCCESS"]:
+                exec_p = float(exec_res.get("price") or 0.0)
+                st.success(f"🚀 **Order Executed:** {exec_res.get('side')} {exec_res.get('quantity')}x `{exec_res.get('symbol')}` @ ₹{exec_p:.2f} (Tag: `{exec_res.get('idempotency_tag', 'N/A')}`)")
+            elif exec_res.get("status") == "SKIPPED":
+                st.info(f"ℹ️ **Action Skipped by Guardrails:** {exec_res.get('message')}")
+            else:
+                st.warning(f"Order Status: {exec_res}")
+        except Exception as eval_err:
+            st.error(f"❌ **AI Evaluation Error:** {str(eval_err)}")
 
     # Section 8: Multi-Regime Historical Stress Replay
     st.markdown("---")
