@@ -1550,6 +1550,8 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                         ref_col1, ref_col2 = st.columns([4, 1.5])
                         with ref_col2:
                             if st.button("⚡ Force Instant Quote Refresh", key="btn_force_quote_ref", type="secondary", use_container_width=True):
+                                radar_res = MarketRadarScanner.scan_market(llm_client=llm_instance, min_confidence=7.0, force_refresh=True)
+                                st.session_state["last_radar_scan"] = radar_res
                                 st.rerun()
                                 
                         for i, opp in enumerate(opps):
@@ -1560,36 +1562,45 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                             o_conf = float(opp.get("confidence_score", 0.0))
                             o_horizon = opp.get("time_horizon", "Intraday (Exit by 3:15 PM)")
                             o_setup = opp.get("setup_name", "Momentum Setup")
-                            o_entry = float(opp.get("entry_price", 0.0))
-                            o_sl = float(opp.get("stop_loss", 0.0))
-                            o_t1 = float(opp.get("target_1", 0.0))
-                            o_t2 = float(opp.get("target_2", 0.0))
                             o_gain = opp.get("expected_gain_pct", "+35% to +65%")
                             o_reason = opp.get("catalyst_reasoning", "")
                             o_exp_str = opp.get("expiry_str", "27-AUG-2026 (Monthly Expiry)")
                             o_lot = int(opp.get("lot_size", 75))
-                            o_cap = float(opp.get("capital_required", o_entry * o_lot))
-                            o_sp_trig = float(opp.get("spot_trigger", o_entry))
-                            o_sp_sl = float(opp.get("spot_sl", o_sl))
-                            o_sp_t1 = float(opp.get("spot_t1", o_t1))
-                            o_sp_t2 = float(opp.get("spot_t2", o_t2))
                             
                             # Fetch Live Quote for Underlying and Option Contract
                             is_opt = o_contract != "N/A" and ("CE" in o_contract or "PE" in o_contract)
                             u_quote = get_live_quote(o_sym)
-                            u_spot = float(u_quote.get("price", opp.get("spot_price", o_entry)))
+                            u_spot = float(u_quote.get("price", opp.get("spot_price", 24250.0)))
                             u_chg = float(u_quote.get("change_pct", opp.get("spot_change_pct", 0.0)))
                             
                             if is_opt:
                                 c_quote = get_live_quote(o_contract)
-                                live_p = float(c_quote.get("price", o_entry))
+                                live_p = float(c_quote.get("price", opp.get("entry_price", 135.0)))
+                                entry_val = live_p
+                                sl_val = round(entry_val * 0.78, 1)
+                                t1_val = round(entry_val * 1.35, 1)
+                                t2_val = round(entry_val * 1.65, 1)
+                                cap_val = round(entry_val * o_lot, 2)
+                                is_bull = "CALL" in o_act
+                                sp_trig_val = round(u_spot + (10.0 if is_bull else -10.0), 1)
+                                sp_sl_val = round(u_spot - (60.0 if is_bull else -60.0), 1)
+                                sp_t1_val = round(u_spot + (110.0 if is_bull else -110.0), 1)
+                                sp_t2_val = round(u_spot + (210.0 if is_bull else -210.0), 1)
                             else:
                                 live_p = u_spot
+                                entry_val = float(opp.get("entry_price", u_spot))
+                                sl_val = float(opp.get("stop_loss", u_spot * 0.985))
+                                t1_val = float(opp.get("target_1", u_spot * 1.02))
+                                t2_val = float(opp.get("target_2", u_spot * 1.04))
+                                cap_val = round(entry_val * o_lot, 2)
+                                sp_trig_val = entry_val
+                                sp_sl_val = sl_val
+                                sp_t1_val = t1_val
+                                sp_t2_val = t2_val
                                 
-                            # Calculate Execution Zone & Difference from Entry
-                            diff_pct = ((live_p - o_entry) / max(0.01, o_entry)) * 100.0 if o_entry > 0 else 0.0
+                            diff_pct = ((live_p - entry_val) / max(0.01, entry_val)) * 100.0 if entry_val > 0 else 0.0
                             if abs(diff_pct) <= 1.5:
-                                zone_text = f"🟢 IN BUY ZONE (Live: ₹{live_p:,.2f})"
+                                zone_text = f"🟢 IN BUY ZONE (₹{live_p:,.1f})"
                                 zone_badge = "badge-bull"
                             elif diff_pct > 1.5:
                                 zone_text = f"⚡ RUNNING (+{diff_pct:.1f}% from Entry)"
@@ -1606,9 +1617,9 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                                 spot_telemetry_html = f"""
                                 <div style='background: #0b0f19; border: 1px solid #1e293b; border-radius: 6px; padding: 8px 12px; margin: 8px 0; font-family: "JetBrains Mono", monospace; font-size: 0.82rem; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px;'>
                                     <div>🇮🇳 <strong>{o_sym.replace('^','')} Spot:</strong> <span style='color: #f8fafc; font-weight: 700;'>₹{u_spot:,.2f}</span> (<span style='color: {"#10b981" if u_chg >= 0 else "#f43f5e"};'>{'+' if u_chg >= 0 else ''}{u_chg:.2f}%</span>)</div>
-                                    <div>⚡ <strong>Entry Trigger:</strong> <span style='color: #38bdf8;'>Spot {'≥' if 'CALL' in o_act else '≤'} ₹{o_sp_trig:,.1f}</span></div>
-                                    <div>📍 <strong>Spot SL:</strong> <span style='color: #f43f5e;'>₹{o_sp_sl:,.1f}</span></div>
-                                    <div>🎯 <strong>Spot T1:</strong> <span style='color: #10b981;'>₹{o_sp_t1:,.1f}</span> | <strong>T2:</strong> <span style='color: #10b981;'>₹{o_sp_t2:,.1f}</span></div>
+                                    <div>⚡ <strong>Entry Trigger:</strong> <span style='color: #38bdf8;'>Spot {'≥' if 'CALL' in o_act else '≤'} ₹{sp_trig_val:,.1f}</span></div>
+                                    <div>📍 <strong>Spot SL:</strong> <span style='color: #f43f5e;'>₹{sp_sl_val:,.1f}</span></div>
+                                    <div>🎯 <strong>Spot T1:</strong> <span style='color: #10b981;'>₹{sp_t1_val:,.1f}</span> | <strong>T2:</strong> <span style='color: #10b981;'>₹{sp_t2_val:,.1f}</span></div>
                                 </div>
                                 """
                             else:
@@ -1620,7 +1631,7 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                                     <span style='font-size: 1.15rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif;'>{display_title}</span>
                                     <div style='display: flex; gap: 6px; align-items: center; flex-wrap: wrap;'>
                                         <span class='badge-sky' style='font-size: 0.72rem; padding: 2px 7px;'>📅 EXPIRY: {o_exp_str}</span>
-                                        <span class='badge-neutral' style='font-size: 0.72rem; padding: 2px 7px;'>📦 1 LOT: {o_lot} QTY (₹{o_cap:,.0f})</span>
+                                        <span class='badge-neutral' style='font-size: 0.72rem; padding: 2px 7px;'>📦 1 LOT: {o_lot} QTY (₹{cap_val:,.0f})</span>
                                         <span class='{zone_badge}' style='font-size: 0.72rem; padding: 2px 7px;'>{zone_text}</span>
                                         <span class='badge-bull' style='font-size: 0.72rem; padding: 2px 7px;'>⭐ CONVICTION: {o_conf:.1f}/10</span>
                                     </div>
@@ -1635,11 +1646,11 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                             
                             # 5 Clean Metric Columns & Execution Button
                             c_live, c_m1, c_m2, c_m3, c_m4, c_btn = st.columns([1.3, 1.1, 1.1, 1.1, 1.1, 1.8])
-                            c_live.metric("⚡ Current Live LTP", f"₹{live_p:,.2f}", f"{diff_pct:+.2f}% vs Entry", delta_color="normal")
-                            c_m1.metric("🎯 Option Entry", f"₹{o_entry:,.2f}")
-                            c_m2.metric("🛑 Safety SL", f"₹{o_sl:,.2f}", f"-{round(((o_entry-o_sl)/max(1,o_entry))*100,1)}%")
-                            c_m3.metric("🎯 Target 1", f"₹{o_t1:,.2f}", f"+{round(((o_t1-o_entry)/max(1,o_entry))*100,1)}%")
-                            c_m4.metric("🚀 Target 2", f"₹{o_t2:,.2f}", f"+{round(((o_t2-o_entry)/max(1,o_entry))*100,1)}%")
+                            c_live.metric("⚡ Current Live LTP", f"₹{live_p:,.2f}")
+                            c_m1.metric("🎯 Option Entry", f"₹{entry_val:,.2f}")
+                            c_m2.metric("🛑 Safety SL", f"₹{sl_val:,.2f}", f"-{round(((entry_val-sl_val)/max(1,entry_val))*100,1)}%")
+                            c_m3.metric("🎯 Target 1", f"₹{t1_val:,.2f}", f"+{round(((t1_val-entry_val)/max(1,entry_val))*100,1)}%")
+                            c_m4.metric("🚀 Target 2", f"₹{t2_val:,.2f}", f"+{round(((t2_val-entry_val)/max(1,entry_val))*100,1)}%")
                             
                             with c_btn:
                                 st.write("")
