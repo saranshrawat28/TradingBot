@@ -352,8 +352,11 @@ broker = get_broker(st.session_state.active_broker_name)
 # -------------------------------------------------------------
 # Top Header & Live Market Telemetry Bar (2s Rate-Limited Fragment)
 # -------------------------------------------------------------
-@st.fragment(run_every=2)
-def render_live_header_telemetry():
+# -------------------------------------------------------------
+# Top Header & Live Market Telemetry Bar (4s Smooth Telemetry)
+# -------------------------------------------------------------
+@st.fragment(run_every=4)
+def render_live_header():
     broker = get_broker(st.session_state.active_broker_name)
     market_open, market_status_text = is_market_open()
     ist_now = get_ist_now().strftime("%d %b %Y | %H:%M:%S IST")
@@ -364,42 +367,31 @@ def render_live_header_telemetry():
     vix_quote = get_live_quote("^INDIAVIX")
     portfolio_data = broker.get_account_balance()
     
-    c_brand, c_nifty, c_bn, c_sensex, c_vix, c_status = st.columns([2.2, 1.8, 1.8, 1.8, 1.4, 2.0])
+    # 5 Institutional-Grade Flat Metric Cards
+    c_nifty, c_bn, c_sensex, c_vix, c_status = st.columns([1.8, 1.8, 1.8, 1.4, 2.2])
     
-    with c_brand:
-        st.markdown(f"""
-        <div class='op-card'>
-            <div style='font-size: 1.15rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif;'>
-                📈 ApexTrade <span class='badge-sky' style='font-size: 0.65rem; padding: 1px 5px;'>INSTITUTIONAL</span>
-            </div>
-            <div style='color: #94a3b8; font-size: 0.72rem; font-family: "JetBrains Mono", monospace; font-feature-settings: "tnum" 1; margin-top: 3px;'>
-                {ist_now}
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-        
     with c_nifty:
         p = float(nifty_quote.get("price", 0.0))
         chg = float(nifty_quote.get("change_pct", 0.0))
         if p > 0:
             is_bull = chg >= 0
             st.markdown(f"""
-            <div class='{'ticker-card-bull' if is_bull else 'ticker-card-bear'}'>
-                <div style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🇮🇳 NIFTY 50</div>
-                <div style='display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px;'>
-                    <span class='{'ticker-val-bull' if is_bull else 'ticker-val-bear'}'>₹{p:,.2f}</span>
-                    <span class='{'badge-bull' if is_bull else 'badge-bear'}'>{'▲ +' if is_bull else '▼ '}{chg:.2f}%</span>
+            <div class='op-card'>
+                <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;'>
+                    <span style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🇮🇳 NIFTY 50</span>
+                    <span class='{'badge-bull' if is_bull else 'badge-bear'}' style='font-size: 0.68rem; padding: 1px 5px; white-space: nowrap;'>{'▲ +' if is_bull else '▼ '}{chg:.2f}%</span>
                 </div>
+                <div class='{'ticker-val-bull' if is_bull else 'ticker-val-bear'}' style='font-size: 1.25rem; font-weight: 800; white-space: nowrap; overflow: hidden;'>₹{p:,.2f}</div>
             </div>
             """, unsafe_allow_html=True)
         else:
             st.markdown("""
-            <div class='ticker-card-neutral'>
-                <div style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🇮🇳 NIFTY 50</div>
-                <div style='display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px;'>
-                    <span class='tnum' style='color: #64748b; font-size: 1.15rem;'>₹---.--</span>
-                    <span class='badge-neutral' style='font-size: 0.68rem;'>OFFLINE</span>
+            <div class='op-card'>
+                <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;'>
+                    <span style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🇮🇳 NIFTY 50</span>
+                    <span class='badge-neutral' style='font-size: 0.68rem; padding: 1px 5px;'>OFFLINE</span>
                 </div>
+                <div class='tnum' style='color: #64748b; font-size: 1.15rem;'>₹---.--</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -409,22 +401,22 @@ def render_live_header_telemetry():
         if p > 0:
             is_bull = chg >= 0
             st.markdown(f"""
-            <div class='{'ticker-card-bull' if is_bull else 'ticker-card-bear'}'>
-                <div style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🏦 BANK NIFTY</div>
-                <div style='display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px;'>
-                    <span class='{'ticker-val-bull' if is_bull else 'ticker-val-bear'}'>₹{p:,.2f}</span>
-                    <span class='{'badge-bull' if is_bull else 'badge-bear'}'>{'▲ +' if is_bull else '▼ '}{chg:.2f}%</span>
+            <div class='op-card'>
+                <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;'>
+                    <span style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🏦 BANK NIFTY</span>
+                    <span class='{'badge-bull' if is_bull else 'badge-bear'}' style='font-size: 0.68rem; padding: 1px 5px; white-space: nowrap;'>{'▲ +' if is_bull else '▼ '}{chg:.2f}%</span>
                 </div>
+                <div class='{'ticker-val-bull' if is_bull else 'ticker-val-bear'}' style='font-size: 1.25rem; font-weight: 800; white-space: nowrap; overflow: hidden;'>₹{p:,.2f}</div>
             </div>
             """, unsafe_allow_html=True)
         else:
             st.markdown("""
-            <div class='ticker-card-neutral'>
-                <div style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🏦 BANK NIFTY</div>
-                <div style='display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px;'>
-                    <span class='tnum' style='color: #64748b; font-size: 1.15rem;'>₹---.--</span>
-                    <span class='badge-neutral' style='font-size: 0.68rem;'>OFFLINE</span>
+            <div class='op-card'>
+                <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;'>
+                    <span style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🏦 BANK NIFTY</span>
+                    <span class='badge-neutral' style='font-size: 0.68rem; padding: 1px 5px;'>OFFLINE</span>
                 </div>
+                <div class='tnum' style='color: #64748b; font-size: 1.15rem;'>₹---.--</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -434,22 +426,22 @@ def render_live_header_telemetry():
         if p > 0:
             is_bull = chg >= 0
             st.markdown(f"""
-            <div class='{'ticker-card-bull' if is_bull else 'ticker-card-bear'}'>
-                <div style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🏛️ SENSEX</div>
-                <div style='display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px;'>
-                    <span class='{'ticker-val-bull' if is_bull else 'ticker-val-bear'}'>₹{p:,.2f}</span>
-                    <span class='{'badge-bull' if is_bull else 'badge-bear'}'>{'▲ +' if is_bull else '▼ '}{chg:.2f}%</span>
+            <div class='op-card'>
+                <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;'>
+                    <span style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🏛️ SENSEX</span>
+                    <span class='{'badge-bull' if is_bull else 'badge-bear'}' style='font-size: 0.68rem; padding: 1px 5px; white-space: nowrap;'>{'▲ +' if is_bull else '▼ '}{chg:.2f}%</span>
                 </div>
+                <div class='{'ticker-val-bull' if is_bull else 'ticker-val-bear'}' style='font-size: 1.25rem; font-weight: 800; white-space: nowrap; overflow: hidden;'>₹{p:,.2f}</div>
             </div>
             """, unsafe_allow_html=True)
         else:
             st.markdown("""
-            <div class='ticker-card-neutral'>
-                <div style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🏛️ SENSEX</div>
-                <div style='display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px;'>
-                    <span class='tnum' style='color: #64748b; font-size: 1.15rem;'>₹---.--</span>
-                    <span class='badge-neutral' style='font-size: 0.68rem;'>OFFLINE</span>
+            <div class='op-card'>
+                <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;'>
+                    <span style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>🏛️ SENSEX</span>
+                    <span class='badge-neutral' style='font-size: 0.68rem; padding: 1px 5px;'>OFFLINE</span>
                 </div>
+                <div class='tnum' style='color: #64748b; font-size: 1.15rem;'>₹---.--</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -465,22 +457,22 @@ def render_live_header_telemetry():
             else:
                 v_tag, v_badge = "EXTREME", "badge-bear"
             st.markdown(f"""
-            <div class='ticker-card-neutral'>
-                <div style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>⚡ INDIA VIX</div>
-                <div style='display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px;'>
-                    <span class='tnum' style='font-size: 1.20rem; font-weight: 800; color: #f8fafc;'>{v:.2f}</span>
-                    <span class='{v_badge}' style='font-size: 0.68rem; padding: 1px 4px;'>{v_tag}</span>
+            <div class='op-card'>
+                <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;'>
+                    <span style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>⚡ INDIA VIX</span>
+                    <span class='{v_badge}' style='font-size: 0.68rem; padding: 1px 5px; white-space: nowrap;'>{v_tag}</span>
                 </div>
+                <div class='tnum' style='font-size: 1.25rem; font-weight: 800; color: #f8fafc; white-space: nowrap; overflow: hidden;'>{v:.2f}</div>
             </div>
             """, unsafe_allow_html=True)
         else:
             st.markdown("""
-            <div class='ticker-card-neutral'>
-                <div style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>⚡ INDIA VIX</div>
-                <div style='display: flex; align-items: baseline; justify-content: space-between; margin-top: 2px;'>
-                    <span class='tnum' style='color: #64748b; font-size: 1.15rem;'>--.--</span>
-                    <span class='badge-neutral' style='font-size: 0.68rem;'>OFFLINE</span>
+            <div class='op-card'>
+                <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px;'>
+                    <span style='font-size: 0.68rem; color: #94a3b8; font-weight: 700; text-transform: uppercase;'>⚡ INDIA VIX</span>
+                    <span class='badge-neutral' style='font-size: 0.68rem; padding: 1px 5px;'>OFFLINE</span>
                 </div>
+                <div class='tnum' style='color: #64748b; font-size: 1.15rem;'>--.--</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -489,13 +481,13 @@ def render_live_header_telemetry():
         st_badge = "badge-bull" if market_open else "badge-bear"
         is_paper = "paper" in broker.name.lower()
         st.markdown(f"""
-        <div class='op-card' style='align-items: flex-end;'>
-            <div><span class='{st_badge}'><span class='{st_dot}'></span>{market_status_text.upper()}</span></div>
-            <div style='color: #94a3b8; font-size: 0.74rem; margin-top: 4px; font-family: "JetBrains Mono", monospace;'>
+        <div class='op-card' style='display: flex; flex-direction: column; justify-content: center; align-items: flex-end;'>
+            <div><span class='{st_badge}' style='font-size: 0.72rem;'><span class='{st_dot}'></span>{market_status_text.upper()}</span></div>
+            <div style='color: #94a3b8; font-size: 0.72rem; margin-top: 4px; font-family: "JetBrains Mono", monospace; white-space: nowrap;'>
                 MODE: <strong style='color: {"#f59e0b" if is_paper else "#10b981"};'>{'PAPER (₹1.00L)' if is_paper else 'ZERODHA LIVE'}</strong>
             </div>
         </div>
-        """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)      
         
     # Account Operational Telemetry Strip (Flat, High-Contrast, Tabular Figures)
     st.markdown("---")
@@ -519,7 +511,7 @@ def render_live_header_telemetry():
     today_losses = [t for t in closed if float(t.get("net_pnl", 0.0)) < 0 and str(t.get("exit_time", "")).startswith(today_str)]
     m5.metric("🛡️ Max Daily Risk Floor", f"₹{max_daily_risk:,.2f}", f"{len(today_losses)}/3 SL Hit Today", delta_color="off")
 
-render_live_header_telemetry()
+render_live_header()
 
 # -------------------------------------------------------------
 # Beginner Guide & Terms Cheat Sheet
@@ -537,9 +529,8 @@ with st.expander("📘 **Plain-English Trading Cheat Sheet (Click to Expand)**",
     """)
 
 # -------------------------------------------------------------
-# ⚡ Live Stock Price Watcher Widget (Instant 2s Real-Time Stream)
+# ⚡ Live Stock Price Watcher Widget (Instant Reactive Search)
 # -------------------------------------------------------------
-@st.fragment(run_every=2)
 def render_live_stock_watcher():
     with st.expander("⚡ **Live Stock Price Watcher — Search Any Indian Stock Instantly (Auto-Streaming)**", expanded=True):
         pq_col1, pq_col2, pq_col3 = st.columns([2.5, 2.5, 1])
