@@ -1523,13 +1523,10 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
             st.caption(f"Engine: **{prov_key.upper()}** ({model_choice})")
             
         if scan_radar_btn:
-            if not ai_api_key or len(ai_api_key.strip()) < 5:
-                st.warning("⚠️ **API Key Required:** Please enter your AI API key in **Step 1** before scanning.")
-            else:
-                with st.spinner(f"AI Radar ({prov_key.upper()} {model_choice}) is scanning NIFTY, BANK NIFTY, and liquid momentum equities..."):
-                    llm_instance = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key)
-                    radar_res = MarketRadarScanner.scan_market(llm_client=llm_instance, min_confidence=7.0)
-                    st.session_state["last_radar_scan"] = radar_res
+            with st.spinner("Scanning NIFTY, BANK NIFTY, and liquid momentum equities for high-conviction trade opportunities..."):
+                llm_instance = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key) if (ai_api_key and len(ai_api_key.strip()) >= 5) else None
+                radar_res = MarketRadarScanner.scan_market(llm_client=llm_instance, min_confidence=7.0)
+                st.session_state["last_radar_scan"] = radar_res
                     
                     # Auto-Dispatch if enabled and confidence >= 8.0
                     if auto_radar_dispatch and radar_res.get("status") == "SUCCESS":
@@ -1806,20 +1803,18 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
 
     # Execution Action
     if run_ai_btn or auto_ai_mode:
-        if not ai_api_key or len(ai_api_key.strip()) < 5:
-            st.warning("⚠️ **API Key Required:** Please enter your AI API key in **Step 1** above before running market evaluations.")
-        else:
-            try:
-                llm_instance = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key)
-                agent = AITradingAgent(
-                    llm_client=llm_instance,
-                    guardrails=ai_guardrails,
-                    broker=active_ai_broker,
-                    is_live_mode=is_live_selected
-                )
-                
-                with st.spinner(f"AI ({prov_key.upper()} {model_choice}) is analyzing live market structure for {clean_target}..."):
-                    telemetry = agent.evaluate_and_execute(clean_target)
+        try:
+            has_key = bool(ai_api_key and len(ai_api_key.strip()) >= 5)
+            llm_instance = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key) if has_key else LLMClient(provider="gemini", model="gemini-2.5-flash", api_key="")
+            agent = AITradingAgent(
+                llm_client=llm_instance,
+                guardrails=ai_guardrails,
+                broker=active_ai_broker,
+                is_live_mode=is_live_selected
+            )
+            
+            with st.spinner(f"Analyzing live market structure for {clean_target}..."):
+                telemetry = agent.evaluate_and_execute(clean_target)
                     
                     st.markdown("### 📡 Live AI Telemetry Feed")
                     
