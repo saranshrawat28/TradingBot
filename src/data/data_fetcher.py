@@ -172,6 +172,8 @@ def search_indian_stocks(query: str) -> list[dict]:
         
     return results
 
+_ASYNC_QUOTE_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+
 def _direct_fetch_quote_network(sym: str) -> Optional[dict]:
     """Fast network quote fetcher using keep-alive persistent connection pool."""
     symbols_to_try = [sym]
@@ -180,53 +182,55 @@ def _direct_fetch_quote_network(sym: str) -> Optional[dict]:
     elif sym.endswith(".BO"):
         symbols_to_try.append(sym.replace(".BO", ".NS"))
         
-    for current_sym in symbols_to_try:
-        try:
-            url = f"https://query1.finance.yahoo.com/v8/finance/chart/{current_sym}?interval=1m&range=1d"
-            resp = _SESSION.get(url, timeout=2.5)
-            if resp.status_code == 200:
-                data = resp.json()
-                result = data.get("chart", {}).get("result")
-                if result and len(result) > 0:
-                    meta = result[0].get("meta", {})
-                    last_price = meta.get("regularMarketPrice")
-                    prev_close = meta.get("chartPreviousClose") or meta.get("previousClose") or last_price
-                    day_high = meta.get("regularMarketDayHigh") or last_price
-                    day_low = meta.get("regularMarketDayLow") or last_price
-                    volume = meta.get("regularMarketVolume") or 0
-                    
-                    if last_price and float(last_price) > 0:
-                        chg = float(last_price) - float(prev_close)
-                        chg_pct = (chg / float(prev_close) * 100.0) if prev_close else 0.0
+    hosts = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"]
+    for host in hosts:
+        for current_sym in symbols_to_try:
+            try:
+                url = f"https://{host}/v8/finance/chart/{current_sym}?interval=1m&range=1d"
+                resp = _SESSION.get(url, timeout=1.8)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    result = data.get("chart", {}).get("result")
+                    if result and len(result) > 0:
+                        meta = result[0].get("meta", {})
+                        last_price = meta.get("regularMarketPrice")
+                        prev_close = meta.get("chartPreviousClose") or meta.get("previousClose") or last_price
+                        day_high = meta.get("regularMarketDayHigh") or last_price
+                        day_low = meta.get("regularMarketDayLow") or last_price
+                        volume = meta.get("regularMarketVolume") or 0
                         
-                        quote_dict = {
-                            "symbol": sym,
-                            "price": round(float(last_price), 2),
-                            "previous_close": round(float(prev_close), 2),
-                            "change": round(float(chg), 2),
-                            "change_pct": round(float(chg_pct), 2),
-                            "high": round(float(day_high), 2),
-                            "low": round(float(day_low), 2),
-                            "volume": int(volume),
-                            "timestamp": get_ist_now().strftime("%d %b %Y | %H:%M:%S IST")
-                        }
-                        _QUOTE_CACHE[sym] = (time.time(), quote_dict)
-                        return quote_dict
-        except Exception:
-            pass
+                        if last_price and float(last_price) > 0:
+                            chg = float(last_price) - float(prev_close)
+                            chg_pct = (chg / float(prev_close) * 100.0) if prev_close else 0.0
+                            
+                            quote_dict = {
+                                "symbol": sym,
+                                "price": round(float(last_price), 2),
+                                "previous_close": round(float(prev_close), 2),
+                                "change": round(float(chg), 2),
+                                "change_pct": round(float(chg_pct), 2),
+                                "high": round(float(day_high), 2),
+                                "low": round(float(day_low), 2),
+                                "volume": int(volume),
+                                "timestamp": get_ist_now().strftime("%d %b %Y | %H:%M:%S IST")
+                            }
+                            _QUOTE_CACHE[sym] = (time.time(), quote_dict)
+                            return quote_dict
+            except Exception:
+                continue
     return None
 
 def _priority_quote_streamer():
-    """Ultra-fast priority daemon polling active UI symbols every 0.4s."""
+    """Ultra-fast priority daemon polling active UI symbols every 1.5s."""
     while True:
         try:
             priority_list = list(_PRIORITY_SYMBOLS)
             if priority_list:
-                with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(priority_list))) as ex:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(priority_list))) as ex:
                     ex.map(_direct_fetch_quote_network, priority_list)
         except Exception:
             pass
-        time.sleep(0.4)
+        time.sleep(1.5)
 
 def _watchlist_quote_streamer():
     """Background round-robin daemon polling general watchlist symbols in small batches."""
@@ -234,31 +238,30 @@ def _watchlist_quote_streamer():
         try:
             all_syms = [s for s in _WATCHED_SYMBOLS if s not in _PRIORITY_SYMBOLS]
             if all_syms:
-                # Poll 4 symbols at a time gently
                 for i in range(0, len(all_syms), 4):
                     chunk = all_syms[i:i+4]
                     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:
                         ex.map(_direct_fetch_quote_network, chunk)
-                    time.sleep(1.0)
+                    time.sleep(1.5)
         except Exception:
             pass
-        time.sleep(2.0)
+        time.sleep(2.5)
 
 # Start dedicated background streamer daemons
 threading.Thread(target=_priority_quote_streamer, daemon=True).start()
 threading.Thread(target=_watchlist_quote_streamer, daemon=True).start()
 
-def get_live_quote(symbol: str) -> dict:
+def get_live_quote(symbol: str, force_refresh: bool = False) -> dict:
     """
     Fetch accurate real-time quote for an Indian stock, index, or option contract.
-    Returns from hot in-memory streaming cache in 0.006ms (Instantaneous Zero-Lag).
+    Returns from hot in-memory streaming cache in 0.006ms with non-blocking async background refresh.
     """
     # 0. Check if symbol is an Option contract (e.g. NIFTY 24500 CE)
     opt_info = parse_option_symbol(symbol)
     if opt_info:
         underlying = resolve_ticker(opt_info["underlying"])
         _WATCHED_SYMBOLS.add(underlying)
-        u_quote = get_live_quote(underlying)
+        u_quote = get_live_quote(underlying, force_refresh=force_refresh)
         spot_p = float(u_quote.get("price", 0.0))
         prev_spot = float(u_quote.get("previous_close", spot_p))
         strike = opt_info["strike"]
@@ -295,17 +298,29 @@ def get_live_quote(symbol: str) -> dict:
     _PRIORITY_SYMBOLS.add(sym)
     _WATCHED_SYMBOLS.add(sym)
     
-    # 1. Instant Cache Hit (0.006ms latency)
-    if sym in _QUOTE_CACHE:
+    now = time.time()
+    
+    # 1. Instant Cache Hit Check
+    if not force_refresh and sym in _QUOTE_CACHE:
         cached_time, cached_quote = _QUOTE_CACHE[sym]
-        return cached_quote.copy()
+        age = now - cached_time
+        if age < 1.8:
+            return cached_quote.copy()
+        elif age < 5.0:
+            # Stale but usable: return instantly and refresh in background
+            _ASYNC_QUOTE_EXECUTOR.submit(_direct_fetch_quote_network, sym)
+            return cached_quote.copy()
         
-    # 2. First-time fetch if cache missed
+    # 2. Synchronous fetch if expired (> 5.0s) or forced
     live_q = _direct_fetch_quote_network(sym)
     if live_q:
         return live_q
         
-    # 3. Fallback baseline
+    # 3. Fallback to existing cache if network momentarily fails
+    if sym in _QUOTE_CACHE:
+        return _QUOTE_CACHE[sym][1].copy()
+        
+    # 4. Fallback baseline
     fallback = {
         "symbol": sym,
         "price": 100.0,
@@ -319,27 +334,27 @@ def get_live_quote(symbol: str) -> dict:
     }
     return fallback
 
-def get_batch_quotes(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+def get_batch_quotes(symbols: List[str], force_refresh: bool = False) -> Dict[str, Dict[str, Any]]:
     """
     High-speed concurrent batch quote fetcher with instant cache resolution.
     Returns mapping of symbol -> quote_dict.
     """
     results = {}
     missing_symbols = []
+    now = time.time()
     
     for s in symbols:
         sym = clean_symbol(s)
-        # Check cache (1.5s TTL)
-        if sym in _QUOTE_CACHE:
+        if not force_refresh and sym in _QUOTE_CACHE:
             ts, q_dict = _QUOTE_CACHE[sym]
-            if time.time() - ts < 1.5:
-                results[sym] = q_dict
+            if now - ts < 2.0:
+                results[sym] = q_dict.copy()
                 continue
         missing_symbols.append(sym)
         
     if missing_symbols:
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(missing_symbols))) as executor:
-            future_to_sym = {executor.submit(get_live_quote, s): s for s in missing_symbols}
+            future_to_sym = {executor.submit(get_live_quote, s, force_refresh): s for s in missing_symbols}
             for future in concurrent.futures.as_completed(future_to_sym):
                 s = future_to_sym[future]
                 try:
@@ -353,7 +368,7 @@ def get_batch_quotes(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
     for s in symbols:
         sym = clean_symbol(s)
         if sym not in results:
-            results[sym] = get_live_quote(sym)
+            results[sym] = get_live_quote(sym, force_refresh=force_refresh)
             
     return results
 

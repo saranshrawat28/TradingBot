@@ -1535,106 +1535,115 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                         if auto_outcome.get("status") == "EXECUTED":
                             st.success(f"🚀 **Auto-Pilot Executed:** {top_opp.get('action')} on {top_opp.get('symbol')}!")
                     
-        # Render Opportunity Cards if scan data exists
-        if "last_radar_scan" in st.session_state:
-            r_data = st.session_state["last_radar_scan"]
-            if r_data.get("status") == "SUCCESS":
-                st.markdown(f"**🌐 Market Tone:** *{r_data.get('market_summary')}*")
-                opps = r_data.get("opportunities", [])
-                
-                if not opps:
-                    st.info("ℹ️ No setups passed the minimum confidence threshold right now. Capital preserved.")
-                else:
-                    for i, opp in enumerate(opps):
-                        o_rank = opp.get("rank", i + 1)
-                        o_sym = opp.get("symbol", "N/A")
-                        o_contract = opp.get("option_contract", "N/A")
-                        o_act = opp.get("action", "BUY_CALL")
-                        o_conf = float(opp.get("confidence_score", 0.0))
-                        o_horizon = opp.get("time_horizon", "Intraday")
-                        o_setup = opp.get("setup_name", "Momentum Setup")
-                        o_entry = float(opp.get("entry_price", 0.0))
-                        o_sl = float(opp.get("stop_loss", 0.0))
-                        o_t1 = float(opp.get("target_1", 0.0))
-                        o_t2 = float(opp.get("target_2", 0.0))
-                        o_gain = opp.get("expected_gain_pct", "+25%")
-                        o_reason = opp.get("catalyst_reasoning", "")
-                        
-                        # Fetch Live Quote for Underlying and Option Contract
-                        is_opt = o_contract != "N/A" and ("CE" in o_contract or "PE" in o_contract)
-                        u_quote = get_live_quote(o_sym)
-                        u_spot = float(u_quote.get("price", opp.get("spot_price", o_entry)))
-                        u_chg = float(u_quote.get("change_pct", opp.get("spot_change_pct", 0.0)))
-                        
-                        if is_opt:
-                            c_quote = get_live_quote(o_contract)
-                            live_p = float(c_quote.get("price", o_entry))
-                        else:
-                            live_p = u_spot
+        # Render Opportunity Cards in a Smooth 3s Auto-Refreshing Fragment (Zero Page Lag)
+        @st.fragment(run_every=3)
+        def render_opportunity_cards_fragment():
+            if "last_radar_scan" in st.session_state:
+                r_data = st.session_state["last_radar_scan"]
+                if r_data.get("status") == "SUCCESS":
+                    st.markdown(f"**🌐 Market Tone:** *{r_data.get('market_summary')}*")
+                    opps = r_data.get("opportunities", [])
+                    
+                    if not opps:
+                        st.info("ℹ️ No setups passed the minimum confidence threshold right now. Capital preserved.")
+                    else:
+                        ref_col1, ref_col2 = st.columns([4, 1.5])
+                        with ref_col2:
+                            if st.button("⚡ Force Instant Quote Refresh", key="btn_force_quote_ref", type="secondary", use_container_width=True):
+                                st.rerun()
+                                
+                        for i, opp in enumerate(opps):
+                            o_rank = opp.get("rank", i + 1)
+                            o_sym = opp.get("symbol", "N/A")
+                            o_contract = opp.get("option_contract", "N/A")
+                            o_act = opp.get("action", "BUY_CALL")
+                            o_conf = float(opp.get("confidence_score", 0.0))
+                            o_horizon = opp.get("time_horizon", "Intraday")
+                            o_setup = opp.get("setup_name", "Momentum Setup")
+                            o_entry = float(opp.get("entry_price", 0.0))
+                            o_sl = float(opp.get("stop_loss", 0.0))
+                            o_t1 = float(opp.get("target_1", 0.0))
+                            o_t2 = float(opp.get("target_2", 0.0))
+                            o_gain = opp.get("expected_gain_pct", "+25%")
+                            o_reason = opp.get("catalyst_reasoning", "")
                             
-                        # Calculate Execution Zone & Difference from Entry
-                        diff_pct = ((live_p - o_entry) / max(0.01, o_entry)) * 100.0 if o_entry > 0 else 0.0
-                        if abs(diff_pct) <= 1.5:
-                            zone_text = f"🟢 IN EXECUTION ZONE (Live: ₹{live_p:,.2f})"
-                            zone_badge = "badge-bull"
-                        elif diff_pct > 1.5:
-                            zone_text = f"⚡ RUNNING (+{diff_pct:.1f}% from Entry)"
-                            zone_badge = "badge-sky"
-                        else:
-                            zone_text = f"⏳ DISCOUNT ZONE ({diff_pct:.1f}% vs Entry)"
-                            zone_badge = "badge-neutral"
-                        
-                        card_border = "#10b981" if "CALL" in o_act or "STOCK" in o_act else "#f43f5e"
-                        display_title = f"#{o_rank} {o_contract if is_opt else o_sym} ({o_act})"
-                        
-                        spot_strip = f"&bull; <strong>{o_sym} Spot:</strong> ₹{u_spot:,.2f} ({'+' if u_chg >= 0 else ''}{u_chg:.2f}%)" if is_opt else ""
-                        
-                        st.markdown(f"""
-                        <div style='background: #111622; border-left: 4px solid {card_border}; border-radius: 8px; padding: 14px 18px; margin-bottom: 12px; border-top: 1px solid #1e293b; border-right: 1px solid #1e293b; border-bottom: 1px solid #1e293b;'>
-                            <div style='display: flex; justify-content: space-between; align-items: center;'>
-                                <span style='font-size: 1.15rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif;'>{display_title}</span>
-                                <div style='display: flex; gap: 8px; align-items: center;'>
-                                    <span class='{zone_badge}' style='font-size: 0.72rem; padding: 2px 8px;'>{zone_text}</span>
-                                    <span class='badge-bull'>⭐ CONVICTION: {o_conf:.1f}/10</span>
+                            # Fetch Live Quote for Underlying and Option Contract
+                            is_opt = o_contract != "N/A" and ("CE" in o_contract or "PE" in o_contract)
+                            u_quote = get_live_quote(o_sym)
+                            u_spot = float(u_quote.get("price", opp.get("spot_price", o_entry)))
+                            u_chg = float(u_quote.get("change_pct", opp.get("spot_change_pct", 0.0)))
+                            
+                            if is_opt:
+                                c_quote = get_live_quote(o_contract)
+                                live_p = float(c_quote.get("price", o_entry))
+                            else:
+                                live_p = u_spot
+                                
+                            # Calculate Execution Zone & Difference from Entry
+                            diff_pct = ((live_p - o_entry) / max(0.01, o_entry)) * 100.0 if o_entry > 0 else 0.0
+                            if abs(diff_pct) <= 1.5:
+                                zone_text = f"🟢 IN EXECUTION ZONE (Live: ₹{live_p:,.2f})"
+                                zone_badge = "badge-bull"
+                            elif diff_pct > 1.5:
+                                zone_text = f"⚡ RUNNING (+{diff_pct:.1f}% from Entry)"
+                                zone_badge = "badge-sky"
+                            else:
+                                zone_text = f"⏳ DISCOUNT ZONE ({diff_pct:.1f}% vs Entry)"
+                                zone_badge = "badge-neutral"
+                            
+                            card_border = "#10b981" if "CALL" in o_act or "STOCK" in o_act else "#f43f5e"
+                            display_title = f"#{o_rank} {o_contract if is_opt else o_sym} ({o_act})"
+                            
+                            spot_strip = f"&bull; <strong>{o_sym} Spot:</strong> ₹{u_spot:,.2f} ({'+' if u_chg >= 0 else ''}{u_chg:.2f}%)" if is_opt else ""
+                            
+                            st.markdown(f"""
+                            <div style='background: #111622; border-left: 4px solid {card_border}; border-radius: 8px; padding: 14px 18px; margin-bottom: 12px; border-top: 1px solid #1e293b; border-right: 1px solid #1e293b; border-bottom: 1px solid #1e293b;'>
+                                <div style='display: flex; justify-content: space-between; align-items: center;'>
+                                    <span style='font-size: 1.15rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif;'>{display_title}</span>
+                                    <div style='display: flex; gap: 8px; align-items: center;'>
+                                        <span class='{zone_badge}' style='font-size: 0.72rem; padding: 2px 8px;'>{zone_text}</span>
+                                        <span class='badge-bull'>⭐ CONVICTION: {o_conf:.1f}/10</span>
+                                    </div>
                                 </div>
+                                <div style='color: #38bdf8; font-size: 0.88rem; font-weight: 600; margin: 4px 0;'>
+                                    🎯 {o_setup} &bull; ⏱️ Horizon: <strong>{o_horizon}</strong> &bull; Target Gain: <span style='color: #10b981;'>{o_gain}</span> {spot_strip}
+                                </div>
+                                <div style='color: #cbd5e1; font-size: 0.86rem; margin-top: 6px; line-height: 1.4;'>🧠 <strong>Institutional Catalyst:</strong> {o_reason}</div>
                             </div>
-                            <div style='color: #38bdf8; font-size: 0.88rem; font-weight: 600; margin: 4px 0;'>
-                                🎯 {o_setup} &bull; ⏱️ Horizon: <strong>{o_horizon}</strong> &bull; Target Gain: <span style='color: #10b981;'>{o_gain}</span> {spot_strip}
-                            </div>
-                            <div style='color: #cbd5e1; font-size: 0.86rem; margin-top: 6px; line-height: 1.4;'>🧠 <strong>Institutional Catalyst:</strong> {o_reason}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        # 5 Clean Metric Columns & Execution Button
-                        c_live, c_m1, c_m2, c_m3, c_m4, c_btn = st.columns([1.3, 1.1, 1.1, 1.1, 1.1, 1.8])
-                        c_live.metric("⚡ Current Live LTP", f"₹{live_p:,.2f}", f"{diff_pct:+.2f}% vs Entry", delta_color="normal")
-                        c_m1.metric("🎯 Suggested Entry", f"₹{o_entry:,.2f}")
-                        c_m2.metric("🛑 Safety SL", f"₹{o_sl:,.2f}")
-                        c_m3.metric("🎯 Target 1", f"₹{o_t1:,.2f}")
-                        c_m4.metric("🚀 Target 2", f"₹{o_t2:,.2f}")
-                        
-                        with c_btn:
-                            st.write("")
-                            if st.button(f"🚀 Execute Trade #{o_rank} (₹{live_p:,.1f})", key=f"btn_exec_opp_{i}", type="primary", use_container_width=True):
-                                llm_instance = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key) if (ai_api_key and len(ai_api_key.strip()) >= 5) else None
-                                agent = AITradingAgent(
-                                    llm_client=llm_instance,
-                                    guardrails=ai_guardrails,
-                                    broker=active_ai_broker,
-                                    is_live_mode=is_live_selected
-                                )
-                                # Update entry to live price for exact execution
-                                opp_exec = dict(opp)
-                                opp_exec["entry_price"] = live_p
-                                exec_outcome = agent.execute_radar_opportunity(opp_exec)
-                                if exec_outcome.get("status") == "EXECUTED":
-                                    st.success(f"✅ Trade Executed! Symbol: `{exec_outcome.get('symbol')}` @ ₹{live_p:,.2f}")
-                                    st.rerun()
-                                else:
-                                    st.error(f"❌ Execution Blocked: {exec_outcome.get('message')}")
-                        st.divider()
-            elif r_data.get("status") == "ERROR":
-                st.error(f"❌ {r_data.get('message')}")
+                            """, unsafe_allow_html=True)
+                            
+                            # 5 Clean Metric Columns & Execution Button
+                            c_live, c_m1, c_m2, c_m3, c_m4, c_btn = st.columns([1.3, 1.1, 1.1, 1.1, 1.1, 1.8])
+                            c_live.metric("⚡ Current Live LTP", f"₹{live_p:,.2f}", f"{diff_pct:+.2f}% vs Entry", delta_color="normal")
+                            c_m1.metric("🎯 Suggested Entry", f"₹{o_entry:,.2f}")
+                            c_m2.metric("🛑 Safety SL", f"₹{o_sl:,.2f}")
+                            c_m3.metric("🎯 Target 1", f"₹{o_t1:,.2f}")
+                            c_m4.metric("🚀 Target 2", f"₹{o_t2:,.2f}")
+                            
+                            with c_btn:
+                                st.write("")
+                                if st.button(f"🚀 Execute Trade #{o_rank} (₹{live_p:,.1f})", key=f"btn_exec_opp_{i}", type="primary", use_container_width=True):
+                                    llm_instance = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key) if (ai_api_key and len(ai_api_key.strip()) >= 5) else None
+                                    agent = AITradingAgent(
+                                        llm_client=llm_instance,
+                                        guardrails=ai_guardrails,
+                                        broker=active_ai_broker,
+                                        is_live_mode=is_live_selected
+                                    )
+                                    # Update entry to live price for exact execution
+                                    opp_exec = dict(opp)
+                                    opp_exec["entry_price"] = live_p
+                                    exec_outcome = agent.execute_radar_opportunity(opp_exec)
+                                    if exec_outcome.get("status") == "EXECUTED":
+                                        st.success(f"✅ Trade Executed! Symbol: `{exec_outcome.get('symbol')}` @ ₹{live_p:,.2f}")
+                                        st.rerun()
+                                    else:
+                                        st.error(f"❌ Execution Blocked: {exec_outcome.get('message')}")
+                            st.divider()
+                elif r_data.get("status") == "ERROR":
+                    st.error(f"❌ {r_data.get('message')}")
+                    
+        render_opportunity_cards_fragment()
 
     st.markdown("---")
 
