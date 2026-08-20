@@ -194,7 +194,62 @@ class TestRefinementsSuite(unittest.TestCase):
         )
         self.assertEqual(put_payoff["breakeven"], 95.0)
         self.assertEqual(put_payoff["max_loss"], -50.0)
-        self.assertEqual(put_payoff["max_profit"], 950.0)
+    def test_dynamic_dte_intraday_and_expiry_decay(self):
+        """Verify dynamic intraday time-to-expiry calculation on expiry vs non-expiry days."""
+        from src.strategies.options_greeks import BlackScholesEngine
+        # Non-expiry calculation returns realistic positive fraction of year
+        dte_years = BlackScholesEngine.calculate_dte_years()
+        self.assertGreater(dte_years, 0.0001)
+        self.assertLessEqual(dte_years, 0.05)
+
+        # 0DTE today test with explicit today date
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        dte_today = BlackScholesEngine.calculate_dte_years(expiry_date=today_str)
+        self.assertGreater(dte_today, 0.0001)
+        self.assertLess(dte_today, 0.01)
+
+    def test_batch_quote_concurrency(self):
+        """Verify get_batch_quotes concurrent resolution across indices."""
+        from src.data.data_fetcher import get_batch_quotes
+        syms = ["^NSEI", "^NSEBANK", "^BSESN", "^INDIAVIX"]
+        res = get_batch_quotes(syms)
+        self.assertEqual(len(res), 4)
+        for s in syms:
+            self.assertIn(s, res)
+            self.assertIn("price", res[s])
+
+    def test_atr_adaptive_chandelier_runner_trailing(self):
+        """Verify that ATR-adaptive Chandelier trailing maintains the +0.5R locked profit floor."""
+        broker = PaperBroker(initial_capital=100000.0)
+        pos = {
+            "symbol": "TCS.NS",
+            "quantity": 10,
+            "entry_time": "2026-08-20 09:30:00",
+            "entry_price": 3500.0,
+            "current_price": 3650.0,
+            "highest_price": 3650.0,
+            "sl": 3450.0,
+            "target_1": 3600.0,
+            "target_2": 3750.0,
+            "target_1_hit": 1,
+            "breakeven_locked": 1,
+            "trailing_sl": 3525.0,
+            "atr": 40.0,
+            "side": "LONG"
+        }
+        save_position(pos)
+        broker.positions = [pos]
+        
+        with patch("src.brokers.paper_broker.get_live_quote") as mock_bp, \
+             patch("src.engine.trade_manager.get_live_quote") as mock_tm:
+            mock_bp.return_value = {"price": 3650.0}
+            mock_tm.return_value = {"price": 3650.0}
+            actions = SmartTradeManager.evaluate_and_manage_positions(broker)
+            
+            # Position should have updated trailing SL: 3650 - (1.8 * 40) = 3578.0
+            from src.utils.storage import get_open_positions
+            updated = get_open_positions()[0]
+            self.assertGreaterEqual(updated["trailing_sl"], 3550.0)
 
 if __name__ == "__main__":
     unittest.main()

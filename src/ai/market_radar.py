@@ -5,6 +5,7 @@ identifies high-probability institutional setups, calculates exact entry/SL/targ
 and coordinates autonomous execution through AIGuardrails and Broker adapters.
 """
 
+import math
 import time
 import json
 import logging
@@ -206,7 +207,7 @@ TASK:
         Returns: (entry_premium, target_1, target_2, stop_loss)
         """
         from src.strategies.options_greeks import BlackScholesEngine
-        t_years = 4.0 / 365.0
+        t_years = BlackScholesEngine.calculate_dte_years()
         vol = max(0.11, vix / 100.0)
         bs_p = BlackScholesEngine.calculate_option_price(
             spot=spot_price,
@@ -216,7 +217,9 @@ TASK:
             option_type=option_type
         )
         intrinsic = max(0.0, spot_price - strike) if option_type.upper() == "CE" else max(0.0, strike - spot_price)
-        premium = round(max(intrinsic + 28.0, bs_p), 1)
+        # On 0DTE time value drops, intrinsic remains 100% solid
+        min_time_val = max(8.0, 30.0 * math.sqrt(max(0.001, t_years * 365.0) / 4.0)) if t_years < 0.015 else 28.0
+        premium = round(max(intrinsic + min_time_val, bs_p), 1)
         t1 = round(premium * 1.35, 1)
         t2 = round(premium * 1.65, 1)
         sl = round(premium * 0.78, 1)

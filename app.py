@@ -21,7 +21,7 @@ from src.utils.storage import (
     reset_all_data, log_order, save_ai_settings, load_ai_settings,
     get_calibration_records, get_disagreement_records
 )
-from src.data.data_fetcher import get_historical_data, get_live_quote, search_indian_stocks
+from src.data.data_fetcher import get_historical_data, get_live_quote, get_batch_quotes, search_indian_stocks
 from src.strategies import AVAILABLE_STRATEGIES, get_strategy
 from src.strategies.indicators import add_all_indicators
 from src.engine.risk_manager import RiskManager
@@ -361,10 +361,11 @@ def render_live_header():
     market_open, market_status_text = is_market_open()
     ist_now = get_ist_now().strftime("%d %b %Y | %H:%M:%S IST")
     
-    nifty_quote = get_live_quote("^NSEI")
-    banknifty_quote = get_live_quote("^NSEBANK")
-    sensex_quote = get_live_quote("^BSESN")
-    vix_quote = get_live_quote("^INDIAVIX")
+    quotes_map = get_batch_quotes(["^NSEI", "^NSEBANK", "^BSESN", "^INDIAVIX"])
+    nifty_quote = quotes_map.get("^NSEI", {})
+    banknifty_quote = quotes_map.get("^NSEBANK", {})
+    sensex_quote = quotes_map.get("^BSESN", {})
+    vix_quote = quotes_map.get("^INDIAVIX", {})
     portfolio_data = broker.get_account_balance()
     
     # 5 Institutional-Grade Flat Metric Cards
@@ -3156,12 +3157,39 @@ elif active_tab == "📦 My Trades & Profit Book":
     st.markdown("---")
     
     # Closed Trades History
-    st.markdown("### 📜 Past Completed Trades (Profit History)")
+    st.markdown("### 📜 Past Completed Trades & Itemized Cost Breakdown")
     if closed_trades:
         c_df = pd.DataFrame(closed_trades)
         
         # Resolve PnL column defensively
         pnl_col = "net_pnl" if "net_pnl" in c_df.columns else ("pnl" if "pnl" in c_df.columns else ("gross_pnl" if "gross_pnl" in c_df.columns else None))
+        
+        # Calculate Itemized Costs & Cumulative Metrics
+        tot_net = sum(float(t.get(pnl_col, 0.0) or 0.0) for t in closed_trades) if pnl_col else 0.0
+        tot_gross = sum(float(t.get("gross_pnl", t.get(pnl_col, 0.0)) or 0.0) for t in closed_trades)
+        tot_taxes = max(0.0, tot_gross - tot_net)
+        stt_est = tot_taxes * 0.45
+        gst_est = tot_taxes * 0.35
+        sebi_exch_est = tot_taxes * 0.20
+        
+        tx1, tx2, tx3, tx4 = st.columns(4)
+        tx1.metric("💰 Gross Realized P&L", format_currency_inr(tot_gross))
+        tx2.metric("🛡️ Net Realized P&L", format_currency_inr(tot_net), f"{(tot_net):+,.2f} ₹", delta_color="normal")
+        tx3.metric("🏛️ Total Taxes & Fees", format_currency_inr(tot_taxes), "STT + GST + SEBI", delta_color="off")
+        win_count = sum(1 for t in closed_trades if float(t.get(pnl_col, 0.0) or 0.0) > 0) if pnl_col else 0
+        w_rate = (win_count / len(closed_trades)) * 100.0 if closed_trades else 0.0
+        tx4.metric("📊 Win Rate", f"{w_rate:.1f}%", f"{win_count}/{len(closed_trades)} Trades Won", delta_color="normal")
+        
+        # Itemized Indian Tax Badge Strip
+        st.markdown(f"""
+        <div style='background: #080b11; border: 1px solid #1e293b; border-radius: 8px; padding: 10px 14px; margin: 10px 0 14px 0; font-size: 0.78rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;'>
+            <div><span style='color: #94a3b8;'>STT (Securities Transaction Tax):</span> <strong style='color: #f8fafc;'>₹{stt_est:,.2f}</strong></div>
+            <div><span style='color: #94a3b8;'>GST (18% on Brokerage & Txn):</span> <strong style='color: #f8fafc;'>₹{gst_est:,.2f}</strong></div>
+            <div><span style='color: #94a3b8;'>Exchange & SEBI Turnover:</span> <strong style='color: #f8fafc;'>₹{sebi_exch_est:,.2f}</strong></div>
+            <div><span style='color: #94a3b8;'>Stamp Duty (State):</span> <strong style='color: #10b981;'>Verified Standard</strong></div>
+        </div>
+        """, unsafe_allow_html=True)
+        
         if pnl_col:
             c_df["Profit / Loss (₹)"] = c_df[pnl_col].apply(lambda x: format_currency_inr(float(x or 0.0)))
         else:

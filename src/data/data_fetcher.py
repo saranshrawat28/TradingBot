@@ -319,6 +319,44 @@ def get_live_quote(symbol: str) -> dict:
     }
     return fallback
 
+def get_batch_quotes(symbols: List[str]) -> Dict[str, Dict[str, Any]]:
+    """
+    High-speed concurrent batch quote fetcher with instant cache resolution.
+    Returns mapping of symbol -> quote_dict.
+    """
+    results = {}
+    missing_symbols = []
+    
+    for s in symbols:
+        sym = clean_symbol(s)
+        # Check cache (1.5s TTL)
+        if sym in _QUOTE_CACHE:
+            ts, q_dict = _QUOTE_CACHE[sym]
+            if time.time() - ts < 1.5:
+                results[sym] = q_dict
+                continue
+        missing_symbols.append(sym)
+        
+    if missing_symbols:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(6, len(missing_symbols))) as executor:
+            future_to_sym = {executor.submit(get_live_quote, s): s for s in missing_symbols}
+            for future in concurrent.futures.as_completed(future_to_sym):
+                s = future_to_sym[future]
+                try:
+                    res = future.result()
+                    if res:
+                        results[s] = res
+                except Exception:
+                    pass
+                    
+    # Fill any missing with fallback
+    for s in symbols:
+        sym = clean_symbol(s)
+        if sym not in results:
+            results[sym] = get_live_quote(sym)
+            
+    return results
+
 def get_historical_data(
     symbol: str,
     period: str = "6mo",

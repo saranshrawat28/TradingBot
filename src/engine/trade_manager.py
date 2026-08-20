@@ -30,7 +30,12 @@ class SmartTradeManager:
         Scan all active positions, update live metrics, and execute multi-stage exits.
         Returns list of actions executed during this tick.
         """
-        active_positions = broker.get_positions() if hasattr(broker, "get_positions") else get_open_positions()
+        if hasattr(broker, "get_open_positions"):
+            active_positions = broker.get_open_positions()
+        elif hasattr(broker, "get_positions"):
+            active_positions = broker.get_positions()
+        else:
+            active_positions = get_open_positions()
         action_events = []
 
         for pos in active_positions:
@@ -146,12 +151,18 @@ class SmartTradeManager:
                 continue
 
             # -------------------------------------------------------------
-            # STAGE 4: Dynamic Chandelier Trailing Stop on Runner
+            # STAGE 4: Dynamic ATR-Adaptive Chandelier Trailing Stop on Runner
             # -------------------------------------------------------------
             if target_1_hit:
                 locked_profit_sl = round(entry_p + (0.5 * initial_risk_r), 2)
-                # Dynamic Trailing SL: Moves up as price makes new highs, never drops below +0.5R lock
-                peak_trailing = highest_p * (1.0 - (trailing_buffer_pct / 100.0))
+                # Adaptive Chandelier Trail: Uses instrument ATR if present, else dynamic percentage
+                pos_atr = float(pos.get("atr", 0.0))
+                if pos_atr > 0:
+                    peak_trailing = highest_p - (1.8 * pos_atr)
+                else:
+                    peak_trailing = highest_p * (1.0 - (trailing_buffer_pct / 100.0))
+                
+                # Trailing SL never drops below locked +0.5R profit floor
                 new_trailing_sl = max(locked_profit_sl, peak_trailing)
                 
                 if new_trailing_sl > trailing_sl:

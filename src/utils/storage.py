@@ -62,7 +62,8 @@ def init_db():
         target_1 REAL,
         target_2 REAL,
         target_1_hit INTEGER DEFAULT 0,
-        stage TEXT DEFAULT 'ACTIVE'
+        stage TEXT DEFAULT 'ACTIVE',
+        atr REAL DEFAULT 0.0
     )
     """)
     
@@ -71,7 +72,8 @@ def init_db():
         "ALTER TABLE positions ADD COLUMN target_1 REAL",
         "ALTER TABLE positions ADD COLUMN target_2 REAL",
         "ALTER TABLE positions ADD COLUMN target_1_hit INTEGER DEFAULT 0",
-        "ALTER TABLE positions ADD COLUMN stage TEXT DEFAULT 'ACTIVE'"
+        "ALTER TABLE positions ADD COLUMN stage TEXT DEFAULT 'ACTIVE'",
+        "ALTER TABLE positions ADD COLUMN atr REAL DEFAULT 0.0"
     ]:
         try:
             cursor.execute(col_def)
@@ -190,8 +192,8 @@ def save_position(pos: dict):
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-    INSERT INTO positions (symbol, side, entry_time, entry_price, quantity, current_price, sl, tp, trailing_sl, highest_price, strategy, unrealized_pnl, unrealized_pnl_pct, target_1, target_2, target_1_hit, stage)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO positions (symbol, side, entry_time, entry_price, quantity, current_price, sl, tp, trailing_sl, highest_price, strategy, unrealized_pnl, unrealized_pnl_pct, target_1, target_2, target_1_hit, stage, atr)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(symbol) DO UPDATE SET
         quantity=excluded.quantity,
         current_price=excluded.current_price,
@@ -204,13 +206,15 @@ def save_position(pos: dict):
         target_1=excluded.target_1,
         target_2=excluded.target_2,
         target_1_hit=excluded.target_1_hit,
-        stage=excluded.stage
+        stage=excluded.stage,
+        atr=excluded.atr
     """, (
         pos["symbol"], pos["side"], pos["entry_time"], pos["entry_price"], pos["quantity"],
         pos.get("current_price", pos["entry_price"]), pos.get("sl"), pos.get("tp"),
         pos.get("trailing_sl"), pos.get("highest_price", pos["entry_price"]),
         pos.get("strategy"), pos.get("unrealized_pnl", 0.0), pos.get("unrealized_pnl_pct", 0.0),
-        pos.get("target_1"), pos.get("target_2"), 1 if pos.get("target_1_hit") else 0, pos.get("stage", "ACTIVE")
+        pos.get("target_1"), pos.get("target_2"), 1 if pos.get("target_1_hit") else 0, pos.get("stage", "ACTIVE"),
+        float(pos.get("atr", 0.0) or 0.0)
     ))
     conn.commit()
     conn.close()
