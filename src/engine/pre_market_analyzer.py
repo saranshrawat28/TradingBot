@@ -79,11 +79,20 @@ class PreMarketAnalyzer:
         is_bullish = "BULLISH" in sentiment or "GAP_UP" in sentiment
         is_bearish = "BEARISH" in sentiment or "GAP_DOWN" in sentiment
 
+        # Compute Current Active Weekly / Monthly Thursday Expiry
+        now = get_ist_now()
+        days_until_thursday = (3 - now.weekday()) % 7
+        if days_until_thursday == 0 and (now.hour * 100 + now.minute) >= 1530:
+            days_until_thursday = 7
+        expiry_dt = now + timedelta(days=days_until_thursday)
+        expiry_str = expiry_dt.strftime("%d-%b-%Y (Thursday Expiry)")
+
         # 1. NIFTY 50 Option Call
         nifty_atm = round(nifty_p / 50.0) * 50
         n_strike = nifty_atm if not is_bullish else (nifty_atm - 50) # ITM1 for buyer safety
         n_type = "CE" if not is_bearish else "PE"
         n_sym = f"NIFTY {int(n_strike)} {n_type}"
+        kite_nifty_code = f"NIFTY {expiry_dt.strftime('%d %b').upper()} {int(n_strike)} {n_type}"
         n_entry = round(135.0 + (abs(nifty_p - n_strike) * 0.55), 1)
         n_t1 = round(n_entry * 1.35, 1)
         n_t2 = round(n_entry * 1.65, 1)
@@ -93,7 +102,10 @@ class PreMarketAnalyzer:
 
         calls.append({
             "symbol": n_sym,
+            "kite_symbol": kite_nifty_code,
             "instrument": "NIFTY 50 Index Option",
+            "expiry": expiry_str,
+            "expiry_month": expiry_dt.strftime("%B %Y"),
             "option_type": n_type,
             "strike": n_strike,
             "action": f"BUY {n_type}",
@@ -116,10 +128,12 @@ class PreMarketAnalyzer:
         })
 
         # 2. Bank Nifty Option Call
+        # Bank Nifty weekly contracts now expire on Wednesday / Thursday
         bn_atm = round(banknifty_p / 100.0) * 100
         bn_strike = bn_atm if not is_bullish else (bn_atm - 100)
         bn_type = "CE" if not is_bearish else "PE"
         bn_sym = f"BANKNIFTY {int(bn_strike)} {bn_type}"
+        kite_bn_code = f"BANKNIFTY {expiry_dt.strftime('%d %b').upper()} {int(bn_strike)} {bn_type}"
         bn_entry = round(260.0 + (abs(banknifty_p - bn_strike) * 0.50), 1)
         bn_t1 = round(bn_entry * 1.35, 1)
         bn_t2 = round(bn_entry * 1.65, 1)
@@ -129,7 +143,10 @@ class PreMarketAnalyzer:
 
         calls.append({
             "symbol": bn_sym,
+            "kite_symbol": kite_bn_code,
             "instrument": "BANK NIFTY Index Option",
+            "expiry": expiry_str,
+            "expiry_month": expiry_dt.strftime("%B %Y"),
             "option_type": bn_type,
             "strike": bn_strike,
             "action": f"BUY {bn_type}",

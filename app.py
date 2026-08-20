@@ -887,6 +887,9 @@ def render_pre_market_tab(broker_instance):
                     win_p = opt["win_probability"]
                     reason = opt["reason"]
 
+                    kite_name = opt.get("kite_symbol", opt_sym)
+                    expiry_name = opt.get("expiry", "Current Weekly Thursday")
+
                     st.markdown(f"""
                     <div style='background: #111622; border: 2px solid {opt_badge}; border-radius: 12px; padding: 18px; height: 100%; display: flex; flex-direction: column; justify-content: space-between;'>
                         <div>
@@ -894,7 +897,8 @@ def render_pre_market_tab(broker_instance):
                                 <div style='font-size: 1.25rem; font-weight: 800; color: #f8fafc; font-family: "Outfit", sans-serif;'>{opt_sym}</div>
                                 <span style='background: {opt_badge}22; color: {opt_badge}; border: 1px solid {opt_badge}; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 0.80rem;'>{opt_action}</span>
                             </div>
-                            <div style='color: #94a3b8; font-size: 0.78rem; margin: 4px 0 8px 0;'>{opt["instrument"]} &bull; Lot: <strong style='color: #f8fafc;'>{lot_sz} Qty</strong></div>
+                            <div style='color: #38bdf8; font-size: 0.82rem; font-weight: 700; margin: 4px 0;'>📅 {expiry_name}</div>
+                            <div style='color: #94a3b8; font-size: 0.76rem; margin-bottom: 8px;'>Broker Symbol: <code style='color: #f8fafc; background: #080b11; padding: 2px 4px; border-radius: 4px;'>{kite_name}</code> &bull; Lot: <strong style='color: #f8fafc;'>{lot_sz} Qty</strong></div>
                             
                             <div style='display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px;'>
                                 <div style='font-size: 1.4rem; font-weight: 800; color: #38bdf8; font-family: "JetBrains Mono", monospace;'>₹{entry_prem:.1f} <span style='font-size: 0.80rem; color: #94a3b8;'>Premium</span></div>
