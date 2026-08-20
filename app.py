@@ -2319,12 +2319,56 @@ elif active_tab in ["🎯 Smart Stock Advisor (When to Buy/Sell)", "🎯 Easy St
         b1, b2, b3, b4 = st.columns(4)
         
         b1.metric("📍 Ideal Entry Price Zone", f"{entry_z}", "Buy within this range")
-        b2.metric("🎯 Target 1 (Quick Profit)", f"₹{t1['price']:,.2f}", f"▲ +{t1.get('gain_pct', 0.0):.1f}% gain ({t1.get('reward_risk', 1.5)}x R/R)", delta_color="normal")
-        b3.metric("🎯 Target 2 (Extended Profit)", f"₹{t2['price']:,.2f}", f"▲ +{t2.get('gain_pct', 0.0):.1f}% gain ({t2.get('reward_risk', 2.5)}x R/R)", delta_color="normal")
-        b4.metric("🛡️ Safety Stop-Loss", f"₹{sl['price']:,.2f}", f"▼ -{sl.get('loss_pct', 0.0):.1f}% loss", delta_color="normal")
+        b2.metric("🎯 Target 1 (Quick Profit)", f"₹{t1['price']:,.2f}", f"▲ +{t1.get('gain_pct', 0.0):.1f}% profit", delta_color="normal")
+        b3.metric("🚀 Target 2 (Extended Move)", f"₹{t2['price']:,.2f}", f"▲ +{t2.get('gain_pct', 0.0):.1f}% profit", delta_color="normal")
+        b4.metric("🛑 Safety Stop-Loss", f"₹{sl['price']:,.2f}", f"▼ -{sl.get('loss_pct', 0.0):.1f}% risk", delta_color="normal")
         
-        # Interactive Candlestick Chart with Live Strategy Overlays
-        with st.expander("📊 **Interactive Strategy Candlestick Chart & Target Overlays**", expanded=True):
+        # 1-Click Quick Execution
+        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        t_col1, t_col2 = st.columns([2, 1])
+        with t_col1:
+            trade_cap = st.number_input("Trading Budget for this Trade (₹):", min_value=5000.0, value=25000.0, step=5000.0, key="adv_trade_budget_input")
+        with t_col2:
+            exec_qty = max(1, int(trade_cap / max(1.0, curr_p)))
+            st.markdown(f"<div style='padding-top: 28px; color: #94a3b8; font-size: 0.88rem;'>Quantity: <strong style='color: #f8fafc;'>{exec_qty} Shares</strong> (₹{curr_p*exec_qty:,.0f})</div>", unsafe_allow_html=True)
+
+        if st.button(f"🚀 1-Click Safe Trade: Buy {exec_qty} Shares of {disp_name} (₹{curr_p*exec_qty:,.0f})", type="primary", use_container_width=True, key="adv_1click_trade_btn"):
+            proposal = {
+                "symbol": adv_sym,
+                "target_asset": adv_sym,
+                "action": "BUY_STOCK" if "BUY" in analysis.get("verdict", "BUY") else "SELL_STOCK",
+                "confidence_score": analysis.get("score", 7.5),
+                "entry_price": curr_p,
+                "sl": float(sl.get("price", curr_p * 0.98)),
+                "target_1": float(t1.get("price", curr_p * 1.03)),
+                "horizon": h_key,
+                "notes": f"Stock Advisor Pick ({disp_name})"
+            }
+            p_state = get_portfolio_state()
+            guard = AIGuardrails(min_confidence_threshold=7.0)
+            approved, g_reason, sanitized_order = guard.evaluate_proposal(proposal, p_state, enforce_time_cutoff=False)
+            
+            if approved:
+                order_res = broker.place_order(
+                    symbol=adv_sym,
+                    side="BUY" if "BUY" in analysis.get("verdict", "BUY") else "SELL",
+                    quantity=exec_qty,
+                    price=curr_p,
+                    sl=float(sl.get("price", curr_p * 0.98)),
+                    tp=float(t1.get("price", curr_p * 1.03)),
+                    strategy_name="Stock_Advisor_Pick"
+                )
+                if order_res.get("status") in ["FILLED", "SUCCESS"]:
+                    st.success(f"✅ Order Executed! Bought {exec_qty} shares of {disp_name} @ ₹{curr_p:.2f}. Safety SL placed @ ₹{float(sl.get('price', curr_p * 0.98)):.2f}.")
+                    st.rerun()
+                else:
+                    st.error(f"❌ Order Rejected: {order_res.get('message')}")
+            else:
+                st.error(f"🛡️ Guardrail Protected: {g_reason}")
+
+        st.markdown("<div style='height: 14px;'></div>", unsafe_allow_html=True)
+        # Technical Candlestick Chart (Collapsible for Clean UX)
+        with st.expander("📊 **View Price Chart & Technical Strategy Levels (Optional)**", expanded=False):
             chart_col1, chart_col2 = st.columns([3, 1])
             with chart_col2:
                 adv_chart_tf = st.selectbox("Candle Timeframe:", ["15m (Short-Term)", "1h (Intraday/Swing)", "1d (Daily Trend)"], index=1, key="adv_chart_tf_sel")
