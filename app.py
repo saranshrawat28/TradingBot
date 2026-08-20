@@ -1252,232 +1252,126 @@ elif active_tab == "🌅 Pre-Market & Best Stocks Today":
     render_pre_market_tab(broker)
 
 # -------------------------------------------------------------
-# TAB 0: 🤖 Autonomous AI Trading Agent (Claude / Kimi / Zerodha)
+# -------------------------------------------------------------
+# TAB 0: 🤖 Autonomous AI Trading Bot
 # -------------------------------------------------------------
 elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "🤖 AI Auto-Pilot (Automated Safe Trading)"]:
-    st.markdown("""
-    <div style='display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px;'>
-        <h2 style='margin: 0;'>🤖 Autonomous AI Trading Agent <span style='font-size: 1rem; color: #818cf8; font-weight: 600;'>(LLM Decision Engine + Zerodha F&O)</span></h2>
-    </div>
-    <div style='color: #94a3b8; font-size: 0.9rem; margin-bottom: 12px;'>Let state-of-the-art AI models (<strong>Anthropic Claude, Kimi Moonshot, OpenAI GPT-4o, Gemini</strong>) trade Index Options & Equities autonomously with mathematical risk guardrails.</div>
-    """, unsafe_allow_html=True)
-
-    # Regulatory & Guardrail Notice Badge
-    st.markdown("""
-    <div style='background: #111622; border: 1px solid #1e293b; border-radius: 8px; padding: 10px 16px; margin-bottom: 16px; display: flex; gap: 18px; align-items: center; flex-wrap: wrap;'>
-        <span class='badge-bull'>🛡️ ZERO-BYPASS GUARDRAILS ACTIVE</span>
-        <span class='badge-cyan'>🏛️ SEBI RETAIL ALGO COMPLIANT</span>
-        <span class='badge-neutral'>⚡ RATE-LIMITED (<3 REQ/S)</span>
-        <span class='badge-bear'>🛑 3:15 PM AUTO SQUARE-OFF</span>
-    </div>
-    """, unsafe_allow_html=True)
-
     # Load Saved AI Configuration
     saved_ai = load_ai_settings()
     saved_prov = saved_ai.get("provider", "gemini")
     
-    provider_options = [
-        "🔵 Google Gemini (Gemini 3.1 Flash-Lite / Gemini 3 / Gemma 4 — Ultra Low Cost)",
-        "⚡ Groq (Llama 3.3 70B — Ultra Low Latency <250ms)",
-        "🟣 Anthropic Claude (Claude 3.7 Sonnet — Latest Hybrid Reasoning)",
-        "🟢 OpenAI (GPT-4o / GPT-4o-mini)",
-        "🔴 DeepSeek (DeepSeek-Chat / Reasoner)",
-        "🌙 Kimi / Moonshot AI (Ultra Fast & Long Context)",
-        "💻 Local Ollama (DeepSeek-R1 / Llama 3 — 100% Free & Offline)"
-    ]
+    prov_to_model = {
+        "gemini": "gemini-3.1-flash-lite",
+        "groq": "llama-3.3-70b-versatile",
+        "anthropic": "claude-3-7-sonnet-20250219",
+        "openai": "gpt-4o",
+        "deepseek": "deepseek-chat",
+        "kimi": "moonshot-v1-8k",
+        "ollama": "deepseek-r1:latest"
+    }
     
-    prov_to_idx = {"gemini": 0, "groq": 1, "anthropic": 2, "openai": 3, "deepseek": 4, "kimi": 5, "ollama": 6}
-    default_prov_idx = prov_to_idx.get(saved_prov, 0)
+    prov_key = saved_prov
+    model_choice = saved_ai.get("model", prov_to_model.get(prov_key, "gemini-3.1-flash-lite"))
+    ai_api_key = saved_ai.get("api_key") or os.getenv(f"{prov_key.upper()}_API_KEY", "")
     
-    # Active Connection Status Banner
-    if saved_ai.get("is_connected") and (saved_ai.get("api_key") or saved_ai.get("provider") == "ollama"):
-        st.markdown(f"""
-        <div style='background: #111622; border: 1px solid #10b981; border-radius: 8px; padding: 12px 18px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center;'>
-            <div>
-                <span style='color: #10b981; font-weight: 700; font-size: 1.02rem;'><span class='ambient-dot-green'></span>ACTIVE AI ENGINE: {saved_ai['provider'].upper()} ({saved_ai.get('model', 'gemini-3.1-flash-lite')})</span>
-                <div style='color: #94a3b8; font-size: 0.82rem; margin-top: 2px;'>Authentication Verified & Locally Persisted &bull; Zero Re-entry Required</div>
-            </div>
-            <span class='badge-bull'>CONNECTED</span>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # Section 1: AI Model & API Configuration
-    with st.expander("🧠 **Step 1: Choose Your AI Model & Enter API Key**", expanded=not saved_ai.get("is_connected")):
-        ai_col1, ai_col2 = st.columns([2, 2.5])
-        with ai_col1:
-            ai_provider = st.selectbox(
-                "Select AI Brain Provider:",
-                provider_options,
-                index=default_prov_idx
-            )
-            
-            if "Gemini" in ai_provider:
-                prov_key = "gemini"
-                model_default = "gemini-3.1-flash-lite"
-            elif "Groq" in ai_provider:
-                prov_key = "groq"
-                model_default = "llama-3.3-70b-versatile"
-            elif "Anthropic" in ai_provider:
-                prov_key = "anthropic"
-                model_default = "claude-3-7-sonnet-20250219"
-            elif "Kimi" in ai_provider:
-                prov_key = "kimi"
-                model_default = "moonshot-v1-8k"
-            elif "OpenAI" in ai_provider:
-                prov_key = "openai"
-                model_default = "gpt-4o"
-            elif "DeepSeek" in ai_provider:
-                prov_key = "deepseek"
-                model_default = "deepseek-chat"
-            elif "Ollama" in ai_provider:
-                prov_key = "ollama"
-                model_default = "deepseek-r1:latest"
-            else:
-                prov_key = "gemini"
-                model_default = "gemini-3.1-flash-lite"
-                
-            model_saved = saved_ai.get("model") if saved_ai.get("provider") == prov_key else model_default
-            model_choice = st.text_input("AI Model Name:", value=model_saved or model_default)
-            
-        with ai_col2:
-            session_key = f"api_key_{prov_key}"
-            if session_key not in st.session_state:
-                saved_key = saved_ai.get("api_key", "") if saved_ai.get("provider") == prov_key else ""
-                st.session_state[session_key] = saved_key or os.getenv(f"{prov_key.upper()}_API_KEY", "")
-                
-            ai_api_key = st.text_input(
-                f"Enter {prov_key.upper()} API Key:",
-                type="password",
-                key=session_key,
-                placeholder=f"Paste your {prov_key.upper()} API key here...",
-                help="Your API key stays strictly local in your private configuration and is never shared or stored remotely."
-            )
-            
-            test_col1, test_col2 = st.columns([1.5, 2.5])
-            with test_col1:
-                st.write("")
-                test_ai_btn = st.button("🔗 Test AI Connection", use_container_width=True)
-            with test_col2:
-                st.write("")
-                
-            status_key = f"ai_test_status_{prov_key}"
-            if test_ai_btn:
-                if not ai_api_key or len(ai_api_key.strip()) < 5:
-                    st.session_state[status_key] = ("info", "ℹ️ **API Key Missing:** Please paste your API key in the field above before running the test.")
-                else:
-                    with st.spinner(f"Connecting to {prov_key.upper()}..."):
-                        client_tester = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key)
-                        success, msg = client_tester.test_connection()
-                        if success:
-                            st.session_state[status_key] = ("success", f"✅ **Connected Successfully:** {msg}")
-                            save_ai_settings({
-                                "provider": prov_key,
-                                "model": model_choice,
-                                "api_key": ai_api_key,
-                                "is_connected": True,
-                                "updated_at": get_ist_now().isoformat()
-                            })
-                        else:
-                            st.session_state[status_key] = ("error", f"❌ **Connection Issue:** {msg}")
-                            
-            if status_key in st.session_state:
-                s_type, s_msg = st.session_state[status_key]
-                if s_type == "success":
-                    st.success(s_msg)
-                elif s_type == "error":
-                    st.error(s_msg)
-                else:
-                    st.info(s_msg)
-
-    # Section 2: Execution Mode & Broker Link (Paper vs Zerodha Live)
-    with st.expander("🔴 **Step 2: Execution Mode & Broker Setup (Paper vs Zerodha Live)**", expanded=True):
-        exec_mode = st.radio(
-            "Select Execution Mode:",
-            [
-                "🛡️ AI Paper Simulation Mode (Zero Risk — Test AI Decision Quality First)",
-                "🔴 Zerodha Real Live Account (Places Real Orders on Zerodha via Kite Connect)"
-            ],
-            horizontal=True
-        )
-        
-        is_live_selected = "Zerodha Real Live" in exec_mode
-        active_ai_broker = broker
-        
-        if is_live_selected:
-            st.warning("⚠️ **Live Real Capital Mode Enabled**: Real orders will be routed to your Zerodha account with hard stop-losses.")
-            z_col1, z_col2, z_col3 = st.columns(3)
-            with z_col1:
-                z_api_key = st.text_input("Zerodha API Key:", type="password", key="zerodha_api_key", placeholder="Your Kite Connect API Key")
-            with z_col2:
-                z_api_secret = st.text_input("Zerodha API Secret:", type="password", key="zerodha_api_secret", placeholder="Your Kite Connect API Secret")
-            with z_col3:
-                z_req_token = st.text_input("Request Token (from login redirect):", type="password", key="zerodha_req_token", placeholder="Paste request_token here")
-                
-            if z_api_key and z_api_secret:
-                active_ai_broker = ZerodhaLiveBroker(api_key=z_api_key, api_secret=z_api_secret)
-                if z_req_token:
-                    if st.button("🔑 Generate Daily Access Token"):
-                        s_ok, s_msg = active_ai_broker.set_session(z_req_token)
-                        if s_ok:
-                            st.success(f"✅ {s_msg}")
-                        else:
-                            st.error(f"❌ {s_msg}")
-            else:
-                st.info("💡 Enter your Zerodha Kite Connect credentials above to link your demat account.")
-
-    # Section 3: Target Asset & Guardrail Parameters
-    with st.expander("🎯 **Step 3: Target Asset & Safety Guardrail Limits**", expanded=True):
-        g_col1, g_col2 = st.columns([2.5, 2.5])
-        with g_col1:
-            target_asset_choice = st.selectbox(
-                "Select Asset to Trade:",
-                [
-                    "NIFTY 50 Index Options (CE / PE Calls & Puts)",
-                    "BANK NIFTY Index Options (CE / PE Calls & Puts)",
-                    "RELIANCE (Reliance Industries)",
-                    "TMCV.NS (Tata Motors)",
-                    "ETERNAL.NS (Zomato)",
-                    "SBIN.NS (State Bank of India)"
-                ]
-            )
-            clean_target = "NIFTY" if "NIFTY 50" in target_asset_choice else ("BANKNIFTY" if "BANK NIFTY" in target_asset_choice else target_asset_choice.split(" ")[0])
-            
-            # Fetch live quote for preview
-            q_target = get_live_quote(clean_target)
-            if q_target.get("price", 0) > 0:
-                st.caption(f"⚡ **{clean_target} Live LTP:** ₹{q_target['price']:,.2f} ({q_target['change_pct']:+.2f}%) | High: ₹{q_target['high']:,.2f} | Low: ₹{q_target['low']:,.2f}")
-                
-        with g_col2:
-            st.markdown("**🛡️ Deterministic Guardrails (The AI Cannot Override These):**")
-            guard_max_loss = st.number_input("Max Daily Loss Limit (₹):", min_value=500.0, value=2000.0, step=500.0)
-            guard_min_conf = st.slider("Min AI Confidence Threshold (/10):", min_value=6.0, max_value=9.5, value=7.5, step=0.1)
-            guard_max_legs = st.number_input("Max Concurrent Active Legs (Position Cap):", min_value=1, max_value=10, value=2, step=1, help="Maximum number of simultaneous open positions allowed by Guardrails.")
-
-    # Initialize Agent & Guardrails
+    # Initialize Broker & Guardrails with Smart Defaults
+    active_ai_broker = broker
+    is_live_selected = False
     ai_guardrails = AIGuardrails(
-        max_daily_loss_flat=guard_max_loss,
+        max_daily_loss_flat=2000.0,
         max_daily_loss_pct=3.0,
-        max_concurrent_legs=int(guard_max_legs),
+        max_concurrent_legs=2,
         max_lots_per_trade=1,
-        min_confidence_threshold=guard_min_conf,
+        min_confidence_threshold=7.5,
         sl_cooldown_minutes=15
     )
     
-    # State Reconciliation Card (1s Live Stream)
-    @st.fragment(run_every=2)
-    def render_ai_state_reconciliation():
-        reconciled = StateReconciler.reconcile_with_broker(active_ai_broker)
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("💼 Account Available Margin", f"₹{reconciled['capital']:,.2f}")
-        real_dpnl = reconciled['daily_pnl']
-        dpnl_arr = "▲ +" if real_dpnl >= 0 else "▼ "
-        m2.metric("📈 Today's Realized PnL", f"₹{real_dpnl:+,.2f}", f"{dpnl_arr}{real_dpnl:,.2f} ₹", delta_color="normal")
-        m3.metric("📊 Active Open Legs", f"{reconciled['active_legs_count']} position(s)")
-        m4.metric("🛡️ Ground Truth Sync", f"{reconciled['status']}")
+    llm_instance = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key) if (ai_api_key or prov_key == "ollama") else None
+    ai_daemon = AutonomousAIDaemon.get_instance()
+
+    # 1. Master AI Auto-Pilot Banner & Control
+    st.markdown(f"""
+    <div style='background: linear-gradient(135deg, #0b1120 0%, #1e1b4b 100%); border: 2px solid #6366f1; border-radius: 12px; padding: 20px 24px; margin-bottom: 18px;'>
+        <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;'>
+            <div>
+                <h2 style='margin: 0; color: #ffffff; font-size: 1.6rem;'>🤖 Autonomous AI Trading Bot</h2>
+                <div style='color: #a5b4fc; font-size: 0.92rem; margin-top: 4px;'>
+                    Zero manual steps required. The AI bot scans Indian markets (NSE/NFO), picks top trade setups, executes orders, manages stop-loss/targets, and books profits automatically.
+                </div>
+            </div>
+            <div style='display: flex; gap: 10px; align-items: center;'>
+                <span class='badge-bull'>🛡️ SEBI Risk Guardrails Active</span>
+                <span class='badge-bear'>🛑 3:15 PM Auto Square-Off</span>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # 2. Master 1-Click Toggle & Real-Time Operational Telemetry
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4 = st.columns([2.5, 1.5, 1.5, 1.5])
+    with ctrl_col1:
+        if ai_daemon.is_active:
+            if st.button("🛑 STOP AI AUTO-PILOT BOT", type="secondary", use_container_width=True):
+                ai_daemon.stop()
+                st.rerun()
+        else:
+            if st.button("🚀 START AI AUTO-PILOT BOT (1-CLICK)", type="primary", use_container_width=True):
+                if not llm_instance or not llm_instance.is_configured():
+                    # Fallback to local heuristic or prompt key entry
+                    st.info("💡 Tip: Enter your AI API Key in the settings below if you want custom LLM reasoning.")
+                ai_daemon.start(
+                    llm_client=llm_instance,
+                    guardrails=ai_guardrails,
+                    broker=active_ai_broker,
+                    is_live_mode=is_live_selected,
+                    interval=20
+                )
+                st.rerun()
+                
+    reconciled = StateReconciler.reconcile_with_broker(active_ai_broker)
+    with ctrl_col2:
+        st.metric("Bot Status", "🟢 ACTIVE & TRADING" if ai_daemon.is_active else "⚪ IDLE")
+    with ctrl_col3:
+        real_pnl = reconciled['daily_pnl']
+        st.metric("Today's PnL", f"₹{real_pnl:+,.2f}", f"{'+' if real_pnl>=0 else ''}{real_pnl:.2f} ₹", delta_color="normal")
+    with ctrl_col4:
+        st.metric("Auto-Trades Executed", f"{ai_daemon.trades_executed_today}")
         
-        # If active open legs exist, show quick operational summary directly in Tab 0
-        if reconciled['active_legs_count'] > 0:
-            open_pos = active_ai_broker.get_open_positions()
+    st.markdown("---")
+
+    # 3. Live AI Internal Thought Stream (Zero-lag auto-updating terminal feed)
+    @st.fragment(run_every=2)
+    def render_live_thought_feed():
+        d_inst = AutonomousAIDaemon.get_instance()
+        thoughts = d_inst.get_thought_stream()
+        if thoughts:
+            st.markdown("**🧠 Live AI Thought & Action Stream** *(Real-time internal reasoning)*")
+            thought_html_lines = []
+            for t in thoughts[:12]:
+                lvl = t.get("level", "INFO")
+                color = "#10b981" if lvl == "EXECUTE" else "#38bdf8" if lvl == "SETUP" else "#f43f5e" if lvl == "RISK" else "#f59e0b" if lvl == "EXIT" else "#a855f7" if lvl == "MANAGEMENT" else "#94a3b8"
+                sym_tag = f"[{t.get('symbol')}]" if t.get('symbol') else ""
+                thought_html_lines.append(
+                    f"<div style='margin-bottom: 4px; line-height: 1.4;'><span style='color: #64748b; font-size: 0.78rem;'>{t.get('time')}</span> "
+                    f"<span style='color: {color}; font-weight: 700; font-size: 0.78rem;'>[{lvl}]</span> "
+                    f"<span style='color: #cbd5e1; font-weight: 600; font-size: 0.82rem;'>{sym_tag}</span> "
+                    f"<span style='color: #f1f5f9; font-size: 0.84rem;'>{t.get('message')}</span></div>"
+                )
+            st.markdown(
+                f"""<div style='background: #090d16; border: 1px solid #1e293b; border-radius: 8px; padding: 12px 16px; font-family: "JetBrains Mono", monospace; max-height: 200px; overflow-y: auto;'>
+                {''.join(thought_html_lines)}
+                </div>""",
+                unsafe_allow_html=True
+            )
+            
+    render_live_thought_feed()
+
+    # 4. Live Active Positions & Auto-Trade Manager
+    @st.fragment(run_every=2)
+    def render_active_positions_feed():
+        open_pos = active_ai_broker.get_open_positions()
+        if open_pos:
+            st.markdown("**📊 Currently Active AI Trades (Auto-Managed):**")
             for pos in open_pos:
                 p_sym = display_symbol_name(pos['symbol'])
                 p_side = pos['side']
@@ -1491,305 +1385,227 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                 p_arr = "▲ +" if p_pnl >= 0 else "▼ "
                 
                 st.markdown(f"""
-                <div style='background: #111622; border-left: 5px solid {p_border}; border-top: 1px solid #1e293b; border-right: 1px solid #1e293b; border-bottom: 1px solid #1e293b; border-radius: 8px; padding: 12px 16px; margin-top: 10px;'>
+                <div style='background: #111622; border-left: 5px solid {p_border}; border-top: 1px solid #1e293b; border-right: 1px solid #1e293b; border-bottom: 1px solid #1e293b; border-radius: 8px; padding: 12px 16px; margin-top: 8px;'>
                     <div style='display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;'>
                         <div style='display: flex; align-items: center; gap: 10px;'>
                             <strong style='color: #f8fafc; font-size: 1.05rem; font-family: "Outfit", sans-serif;'>{p_sym}</strong>
                             <span class='badge-cyan' style='font-size: 0.72rem;'>{p_side} ({pos['quantity']} sh)</span>
-                            <span class='badge-neutral' style='font-size: 0.72rem;'>🕒 Executed: {p_time}</span>
                             <span class='badge-bull' style='font-size: 0.72rem;'>⏳ Holding: {p_dur}</span>
                         </div>
                         <div style='display: flex; align-items: center; gap: 14px;'>
-                            <div style='font-size: 0.84rem; color: #94a3b8;'>Entry: <span class='mono-num'>₹{p_entry:,.2f}</span> &bull; LTP: <span class='mono-num'>₹{p_curr:,.2f}</span></div>
+                            <div style='font-size: 0.84rem; color: #94a3b8;'>Entry: ₹{p_entry:,.2f} &bull; LTP: ₹{p_curr:,.2f}</div>
                             <div style='font-size: 1.05rem; font-weight: 700; color: {p_border}; font-family: "JetBrains Mono", monospace;'>{format_currency_inr(p_pnl)} ({p_arr}{p_pnl_pct:.2f}%)</div>
                         </div>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-
-    render_ai_state_reconciliation()
+                
+    render_active_positions_feed()
 
     st.markdown("---")
 
-    # Section 4: AI Live Opportunity Radar (Multi-Asset Scanner & Auto-Dispatcher)
-    with st.expander("📡 **Step 4: AI Opportunity Radar (Live Top Trade Setups & Holding Expectancy)**", expanded=True):
-        st.caption("AI continuously scans NIFTY 50, BANK NIFTY, and high-momentum stocks to calculate exact entry, stop-loss, 1:2 R:R targets, and holding horizon.")
-        
-        rad_col1, rad_col2, rad_col3 = st.columns([2, 2, 1.5])
-        with rad_col1:
-            scan_radar_btn = st.button("🔄 Scan Market Opportunities Now", type="primary", use_container_width=True)
-        with rad_col2:
-            auto_radar_dispatch = st.checkbox("⚡ Auto-Dispatch Top Setup (Confidence >= 8.0)", value=False, help="Automatically place order if an opportunity meets institutional conviction.")
-        with rad_col3:
-            st.caption(f"Engine: **{prov_key.upper()}** ({model_choice})")
-            
-        if scan_radar_btn:
-            with st.spinner("Scanning NIFTY, BANK NIFTY, and liquid momentum equities for high-conviction trade opportunities..."):
-                llm_instance = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key) if (ai_api_key and len(ai_api_key.strip()) >= 5) else None
-                radar_res = MarketRadarScanner.scan_market(llm_client=llm_instance, min_confidence=7.0)
+    # 5. AI Market Opportunity Radar (Live Top Trade Setups)
+    st.subheader("📡 Live AI Trade Setups (Auto-Dispatched on Auto-Pilot)")
+    st.caption("The AI scans NIFTY, BANK NIFTY, and top stocks to calculate exact Buy Entry, Stop-Loss Exit, and Target Exit prices.")
+    
+    rad_c1, rad_c2 = st.columns([3, 1.5])
+    with rad_c1:
+        if st.button("🔄 Scan Market Opportunities Now", type="secondary", use_container_width=True):
+            with st.spinner("Scanning Indian markets for top institutional setups..."):
+                radar_res = MarketRadarScanner.scan_market(llm_client=llm_instance, min_confidence=7.0, force_refresh=True)
                 st.session_state["last_radar_scan"] = radar_res
+                st.rerun()
+    with rad_c2:
+        st.caption(f"🧠 Engine: **{prov_key.upper()}** ({model_choice})")
+        
+    if "last_radar_scan" not in st.session_state:
+        # Pre-populate initial radar scan automatically
+        radar_res = MarketRadarScanner.scan_market(llm_client=llm_instance, min_confidence=7.0)
+        st.session_state["last_radar_scan"] = radar_res
+
+    # Render Opportunity Cards in a Smooth 3s Auto-Refreshing Fragment (Zero Page Lag)
+    @st.fragment(run_every=3)
+    def render_opportunity_cards_fragment():
+        if "last_radar_scan" in st.session_state:
+            r_data = st.session_state["last_radar_scan"]
+            if r_data.get("status") == "SUCCESS":
+                st.markdown(f"**🌐 Market Tone:** *{r_data.get('market_summary')}*")
+                opps = r_data.get("opportunities", [])
                 
-                # Auto-Dispatch if enabled and confidence >= 8.0
-                if auto_radar_dispatch and radar_res.get("status") == "SUCCESS":
-                    opps_list = radar_res.get("opportunities", [])
-                    if opps_list and float(opps_list[0].get("confidence_score", 0)) >= 8.0:
-                        top_opp = opps_list[0]
-                        agent_auto = AITradingAgent(
-                            llm_client=llm_instance,
-                            guardrails=ai_guardrails,
-                            broker=active_ai_broker,
-                            is_live_mode=is_live_selected
-                        )
-                        auto_outcome = agent_auto.execute_radar_opportunity(top_opp)
-                        if auto_outcome.get("status") == "EXECUTED":
-                            st.success(f"🚀 **Auto-Pilot Executed:** {top_opp.get('action')} on {top_opp.get('symbol')}!")
-                    
-        # Render Opportunity Cards in a Smooth 3s Auto-Refreshing Fragment (Zero Page Lag)
-        @st.fragment(run_every=3)
-        def render_opportunity_cards_fragment():
-            if "last_radar_scan" in st.session_state:
-                r_data = st.session_state["last_radar_scan"]
-                if r_data.get("status") == "SUCCESS":
-                    st.markdown(f"**🌐 Market Tone:** *{r_data.get('market_summary')}*")
-                    opps = r_data.get("opportunities", [])
-                    
-                    if not opps:
-                        st.info("ℹ️ No setups passed the minimum confidence threshold right now. Capital preserved.")
-                    else:
-                        ref_col1, ref_col2 = st.columns([4, 1.5])
-                        with ref_col2:
-                            if st.button("⚡ Force Instant Quote Refresh", key="btn_force_quote_ref", type="secondary", use_container_width=True):
-                                radar_res = MarketRadarScanner.scan_market(llm_client=llm_instance, min_confidence=7.0, force_refresh=True)
-                                st.session_state["last_radar_scan"] = radar_res
-                                st.rerun()
-                                
-                        for i, opp in enumerate(opps):
-                            o_rank = opp.get("rank", i + 1)
-                            o_sym = opp.get("symbol", "N/A")
-                            o_contract = opp.get("option_contract", "N/A")
-                            o_act = opp.get("action", "BUY_CALL")
-                            o_conf = float(opp.get("confidence_score", 0.0))
-                            o_horizon = opp.get("time_horizon", "Exit by 3:15 PM IST")
-                            o_setup = opp.get("setup_name", "Momentum Breakout")
-                            o_gain = opp.get("expected_gain_pct", "+35% to +65%")
-                            o_reason = opp.get("catalyst_reasoning", "")
-                            o_exp_str = opp.get("expiry_str", "27-AUG-2026")
-                            o_lot = int(opp.get("lot_size", 75))
+                if not opps:
+                    st.info("ℹ️ No setups passed the minimum confidence threshold right now. Capital preserved.")
+                else:
+                    ref_col1, ref_col2 = st.columns([4, 1.5])
+                    with ref_col2:
+                        if st.button("⚡ Force Instant Quote Refresh", key="btn_force_quote_ref", type="secondary", use_container_width=True):
+                            radar_res = MarketRadarScanner.scan_market(llm_client=llm_instance, min_confidence=7.0, force_refresh=True)
+                            st.session_state["last_radar_scan"] = radar_res
+                            st.rerun()
                             
-                            # Fetch Live Quote for Underlying and Option Contract
-                            is_opt = o_contract != "N/A" and ("CE" in o_contract or "PE" in o_contract)
-                            u_quote = get_live_quote(o_sym)
-                            u_spot = float(u_quote.get("price", opp.get("spot_price", 24250.0)))
-                            u_chg = float(u_quote.get("change_pct", opp.get("spot_change_pct", 0.0)))
+                    for i, opp in enumerate(opps):
+                        o_rank = opp.get("rank", i + 1)
+                        o_sym = opp.get("symbol", "N/A")
+                        o_contract = opp.get("option_contract", "N/A")
+                        o_act = opp.get("action", "BUY_CALL")
+                        o_conf = float(opp.get("confidence_score", 0.0))
+                        o_horizon = opp.get("time_horizon", "Exit by 3:15 PM IST")
+                        o_setup = opp.get("setup_name", "Momentum Breakout")
+                        o_gain = opp.get("expected_gain_pct", "+35% to +65%")
+                        o_reason = opp.get("catalyst_reasoning", "")
+                        o_exp_str = opp.get("expiry_str", "27-AUG-2026")
+                        o_lot = int(opp.get("lot_size", 75))
+                        
+                        # Fetch Live Quote for Underlying and Option Contract
+                        is_opt = o_contract != "N/A" and ("CE" in o_contract or "PE" in o_contract)
+                        u_quote = get_live_quote(o_sym)
+                        u_spot = float(u_quote.get("price", opp.get("spot_price", 24250.0)))
+                        u_chg = float(u_quote.get("change_pct", opp.get("spot_change_pct", 0.0)))
+                        
+                        if is_opt:
+                            c_quote = get_live_quote(o_contract)
+                            live_p = float(c_quote.get("price", opp.get("entry_price", 132.0)))
+                            entry_val = live_p
+                            sl_val = round(entry_val * 0.78, 1)
+                            t1_val = round(entry_val * 1.35, 1)
+                            t2_val = round(entry_val * 1.65, 1)
+                            cap_val = round(entry_val * o_lot, 2)
+                            is_bull = "CALL" in o_act or "CE" in o_contract
+                            sp_trig_val = float(opp.get("spot_trigger", round(u_spot + (10.0 if is_bull else -10.0), 1)))
+                            max_risk_inr = round(abs(entry_val - sl_val) * o_lot, 0)
+                            exp_gain_inr = round(abs(t1_val - entry_val) * o_lot, 0)
                             
-                            if is_opt:
-                                c_quote = get_live_quote(o_contract)
-                                live_p = float(c_quote.get("price", opp.get("entry_price", 132.0)))
-                                entry_val = live_p
-                                sl_val = round(entry_val * 0.78, 1)
-                                t1_val = round(entry_val * 1.35, 1)
-                                t2_val = round(entry_val * 1.65, 1)
-                                cap_val = round(entry_val * o_lot, 2)
-                                is_bull = "CALL" in o_act or "CE" in o_contract
-                                sp_trig_val = float(opp.get("spot_trigger", round(u_spot + (10.0 if is_bull else -10.0), 1)))
-                                max_risk_inr = round(abs(entry_val - sl_val) * o_lot, 0)
-                                exp_gain_inr = round(abs(t1_val - entry_val) * o_lot, 0)
-                                
-                                # Evaluate directional trigger condition
-                                if is_bull:
-                                    trigger_met = u_spot >= sp_trig_val
-                                    pts_away = sp_trig_val - u_spot
-                                    if trigger_met:
-                                        zone_text = f"🟢 TRIGGER ACTIVE (Spot ≥ ₹{sp_trig_val:,.0f})"
-                                        zone_color = "#10b981"
-                                    else:
-                                        zone_text = f"⏳ AWAITING TRIGGER ({pts_away:.1f} pts away)"
-                                        zone_color = "#f59e0b"
-                                else:
-                                    trigger_met = u_spot <= sp_trig_val
-                                    pts_away = u_spot - sp_trig_val
-                                    if trigger_met:
-                                        zone_text = f"🟢 BREAKDOWN ACTIVE (Spot ≤ ₹{sp_trig_val:,.0f})"
-                                        zone_color = "#10b981"
-                                    else:
-                                        zone_text = f"⏳ AWAITING BREAKDOWN ({pts_away:.1f} pts away)"
-                                        zone_color = "#f59e0b"
-                            else:
-                                live_p = u_spot
-                                entry_val = float(opp.get("entry_price", u_spot))
-                                sl_val = float(opp.get("stop_loss", u_spot * 0.985))
-                                t1_val = float(opp.get("target_1", u_spot * 1.02))
-                                t2_val = float(opp.get("target_2", u_spot * 1.04))
-                                cap_val = round(entry_val * o_lot, 2)
-                                sp_trig_val = entry_val
-                                max_risk_inr = round(abs(entry_val - sl_val) * o_lot, 0)
-                                exp_gain_inr = round(abs(t1_val - entry_val) * o_lot, 0)
-                                is_bull = "BUY" in o_act
-                                diff_pct = ((live_p - entry_val) / max(0.01, entry_val)) * 100.0 if entry_val > 0 else 0.0
-                                if abs(diff_pct) <= 1.0:
-                                    zone_text = "🟢 READY TO ENTER"
+                            # Evaluate directional trigger condition
+                            if is_bull:
+                                trigger_met = u_spot >= sp_trig_val
+                                pts_away = sp_trig_val - u_spot
+                                if trigger_met:
+                                    zone_text = f"🟢 TRIGGER ACTIVE (Spot ≥ ₹{sp_trig_val:,.0f})"
                                     zone_color = "#10b981"
-                                elif diff_pct > 1.0:
-                                    zone_text = f"⚡ RUNNING (+{diff_pct:.1f}%)"
-                                    zone_color = "#38bdf8"
                                 else:
-                                    zone_text = f"⏳ DISCOUNT ({diff_pct:.1f}%)"
-                                    zone_color = "#94a3b8"
-                            
-                            card_border = "#10b981" if is_bull else "#f43f5e"
-                            contract_title = o_contract if is_opt else o_sym
-                            action_badge_bg = "rgba(16, 185, 129, 0.15)" if is_bull else "rgba(244, 63, 94, 0.15)"
-                            action_badge_color = "#10b981" if is_bull else "#f43f5e"
-                            
-                            sl_pct_calc = abs(round(((entry_val - sl_val) / max(0.01, entry_val)) * 100, 1))
-                            t1_pct_calc = abs(round(((t1_val - entry_val) / max(0.01, entry_val)) * 100, 1))
-                            t2_pct_calc = abs(round(((t2_val - entry_val) / max(0.01, entry_val)) * 100, 1))
-                            
-                            st.markdown(f"""
-                            <div style='background: linear-gradient(135deg, #0d121f 0%, #111827 100%); border: 1px solid #1e293b; border-left: 5px solid {card_border}; border-radius: 12px; padding: 18px 22px; margin-bottom: 16px;'>
-                                <!-- Header Row -->
-                                <div style='display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 12px; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;'>
-                                    <div>
-                                        <span style='font-size: 1.25rem; font-weight: 800; color: #ffffff; font-family: "Outfit", sans-serif;'>#{o_rank} {contract_title}</span>
-                                        <span style='background: {action_badge_bg}; color: {action_badge_color}; border: 1px solid {action_badge_color}40; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px; margin-left: 8px;'>{o_act}</span>
-                                    </div>
-                                    <div style='display: flex; gap: 10px; align-items: center;'>
-                                        <span style='color: #94a3b8; font-size: 0.82rem;'>📅 Expiry: <strong style='color: #f1f5f9;'>{o_exp_str}</strong></span>
-                                        <span style='background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px;'>⭐ {o_conf:.1f}/10 Conviction</span>
-                                    </div>
+                                    zone_text = f"⏳ AWAITING TRIGGER ({pts_away:.1f} pts away)"
+                                    zone_color = "#f59e0b"
+                            else:
+                                trigger_met = u_spot <= sp_trig_val
+                                pts_away = u_spot - sp_trig_val
+                                if trigger_met:
+                                    zone_text = f"🟢 BREAKDOWN ACTIVE (Spot ≤ ₹{sp_trig_val:,.0f})"
+                                    zone_color = "#10b981"
+                                else:
+                                    zone_text = f"⏳ AWAITING BREAKDOWN ({pts_away:.1f} pts away)"
+                                    zone_color = "#f59e0b"
+                        else:
+                            live_p = u_spot
+                            entry_val = float(opp.get("entry_price", u_spot))
+                            sl_val = float(opp.get("stop_loss", u_spot * 0.985))
+                            t1_val = float(opp.get("target_1", u_spot * 1.02))
+                            t2_val = float(opp.get("target_2", u_spot * 1.04))
+                            cap_val = round(entry_val * o_lot, 2)
+                            sp_trig_val = entry_val
+                            max_risk_inr = round(abs(entry_val - sl_val) * o_lot, 0)
+                            exp_gain_inr = round(abs(t1_val - entry_val) * o_lot, 0)
+                            is_bull = "BUY" in o_act
+                            diff_pct = ((live_p - entry_val) / max(0.01, entry_val)) * 100.0 if entry_val > 0 else 0.0
+                            if abs(diff_pct) <= 1.0:
+                                zone_text = "🟢 READY TO ENTER"
+                                zone_color = "#10b981"
+                            elif diff_pct > 1.0:
+                                zone_text = f"⚡ RUNNING (+{diff_pct:.1f}%)"
+                                zone_color = "#38bdf8"
+                            else:
+                                zone_text = f"⏳ DISCOUNT ({diff_pct:.1f}%)"
+                                zone_color = "#94a3b8"
+                        
+                        card_border = "#10b981" if is_bull else "#f43f5e"
+                        contract_title = o_contract if is_opt else o_sym
+                        action_badge_bg = "rgba(16, 185, 129, 0.15)" if is_bull else "rgba(244, 63, 94, 0.15)"
+                        action_badge_color = "#10b981" if is_bull else "#f43f5e"
+                        
+                        sl_pct_calc = abs(round(((entry_val - sl_val) / max(0.01, entry_val)) * 100, 1))
+                        t1_pct_calc = abs(round(((t1_val - entry_val) / max(0.01, entry_val)) * 100, 1))
+                        t2_pct_calc = abs(round(((t2_val - entry_val) / max(0.01, entry_val)) * 100, 1))
+                        
+                        st.markdown(f"""
+                        <div style='background: linear-gradient(135deg, #0d121f 0%, #111827 100%); border: 1px solid #1e293b; border-left: 5px solid {card_border}; border-radius: 12px; padding: 18px 22px; margin-bottom: 16px;'>
+                            <!-- Header Row -->
+                            <div style='display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 12px; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;'>
+                                <div>
+                                    <span style='font-size: 1.25rem; font-weight: 800; color: #ffffff; font-family: "Outfit", sans-serif;'>#{o_rank} {contract_title}</span>
+                                    <span style='background: {action_badge_bg}; color: {action_badge_color}; border: 1px solid {action_badge_color}40; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px; margin-left: 8px;'>{o_act}</span>
                                 </div>
-
-                                <!-- 4 Direct Action Boxes: Entry, SL Exit, Target 1 Exit, Target 2 Exit -->
-                                <div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 14px;'>
-                                    <!-- Box 1: BUY ENTRY PRICE -->
-                                    <div style='background: #090d16; border: 1px solid #38bdf8; border-radius: 8px; padding: 12px; text-align: center;'>
-                                        <div style='color: #38bdf8; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🟢 BUY ENTRY PRICE</div>
-                                        <div style='color: #ffffff; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{entry_val:,.2f}</div>
-                                        <div style='color: {zone_color}; font-size: 0.75rem; font-weight: 700;'>{zone_text}</div>
-                                    </div>
-
-                                    <!-- Box 2: STOP-LOSS EXIT -->
-                                    <div style='background: #090d16; border: 1px solid rgba(244, 63, 94, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
-                                        <div style='color: #f43f5e; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🛑 STOP-LOSS EXIT</div>
-                                        <div style='color: #f43f5e; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{sl_val:,.2f}</div>
-                                        <div style='color: #f43f5e; font-size: 0.75rem; font-weight: 700;'>Exit on -{sl_pct_calc}% (-₹{max_risk_inr:,.0f})</div>
-                                    </div>
-
-                                    <!-- Box 3: TARGET 1 EXIT (50%) -->
-                                    <div style='background: #090d16; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
-                                        <div style='color: #10b981; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🎯 TARGET 1 EXIT (50%)</div>
-                                        <div style='color: #10b981; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{t1_val:,.2f}</div>
-                                        <div style='color: #10b981; font-size: 0.75rem; font-weight: 700;'>Book 50% (+{t1_pct_calc}% / +₹{exp_gain_inr:,.0f})</div>
-                                    </div>
-
-                                    <!-- Box 4: TARGET 2 EXIT (100%) -->
-                                    <div style='background: #090d16; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
-                                        <div style='color: #10b981; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🚀 TARGET 2 EXIT (100%)</div>
-                                        <div style='color: #10b981; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{t2_val:,.2f}</div>
-                                        <div style='color: #10b981; font-size: 0.75rem; font-weight: 700;'>Full Exit (+{t2_pct_calc}% / +₹{round(abs(t2_val-entry_val)*o_lot, 0):,.0f})</div>
-                                    </div>
-                                </div>
-
-                                <!-- Quick Specs Strip -->
-                                <div style='display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.7); border: 1px solid #1e293b; border-radius: 6px; padding: 8px 14px; font-size: 0.82rem; color: #cbd5e1; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;'>
-                                    <div>📦 <strong>Position:</strong> 1 Lot ({o_lot} Shares) &bull; Total Capital: <strong style='color: #38bdf8;'>₹{cap_val:,.0f}</strong></div>
-                                    <div>🇮🇳 <strong>{o_sym.replace('^','')} Spot:</strong> ₹{u_spot:,.2f} (<span style='color: {"#10b981" if u_chg >= 0 else "#f43f5e"};'>{'+' if u_chg >= 0 else ''}{u_chg:.2f}%</span>) &bull; <strong>Trigger:</strong> Spot {'≥' if is_bull else '≤'} ₹{sp_trig_val:,.1f}</div>
-                                    <div>⏱️ <strong>Holding Duration:</strong> {o_horizon}</div>
-                                </div>
-
-                                <!-- Setup Rationale -->
-                                <div style='color: #94a3b8; font-size: 0.84rem; line-height: 1.4;'>
-                                    🧠 <strong style='color: #e2e8f0;'>Strategy:</strong> {o_setup} &mdash; {o_reason}
+                                <div style='display: flex; gap: 10px; align-items: center;'>
+                                    <span style='color: #94a3b8; font-size: 0.82rem;'>📅 Expiry: <strong style='color: #f1f5f9;'>{o_exp_str}</strong></span>
+                                    <span style='background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px;'>⭐ {o_conf:.1f}/10 Conviction</span>
                                 </div>
                             </div>
-                            """, unsafe_allow_html=True)
-                            
-                            # Clean 1-Click Execution Button
-                            if st.button(f"🚀 1-Click Execute #{o_rank}: Buy {contract_title} @ ₹{live_p:,.1f} (₹{cap_val:,.0f})", key=f"btn_exec_opp_{i}", type="primary", use_container_width=True):
-                                llm_instance = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key) if (ai_api_key and len(ai_api_key.strip()) >= 5) else None
-                                agent = AITradingAgent(
-                                    llm_client=llm_instance,
-                                    guardrails=ai_guardrails,
-                                    broker=active_ai_broker,
-                                    is_live_mode=is_live_selected
-                                )
-                                opp_exec = dict(opp)
-                                opp_exec["entry_price"] = live_p
-                                exec_outcome = agent.execute_radar_opportunity(opp_exec)
-                                if exec_outcome.get("status") == "EXECUTED":
-                                    st.success(f"✅ Trade Executed! Symbol: `{exec_outcome.get('symbol')}` @ ₹{live_p:,.2f}")
-                                    st.rerun()
-                                else:
-                                    st.error(f"❌ Execution Blocked: {exec_outcome.get('message')}")
-                            st.write("")
-                elif r_data.get("status") == "ERROR":
-                    st.error(f"❌ {r_data.get('message')}")
-                    
-        render_opportunity_cards_fragment()
 
-    st.markdown("---")
+                            <!-- 4 Direct Action Boxes: Entry, SL Exit, Target 1 Exit, Target 2 Exit -->
+                            <div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 14px;'>
+                                <!-- Box 1: BUY ENTRY PRICE -->
+                                <div style='background: #090d16; border: 1px solid #38bdf8; border-radius: 8px; padding: 12px; text-align: center;'>
+                                    <div style='color: #38bdf8; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🟢 BUY ENTRY PRICE</div>
+                                    <div style='color: #ffffff; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{entry_val:,.2f}</div>
+                                    <div style='color: {zone_color}; font-size: 0.75rem; font-weight: 700;'>{zone_text}</div>
+                                </div>
 
-    # Section 5: Autonomous AI Auto-Pilot Bot & Continuous Background Engine
-    st.subheader("🤖 Autonomous AI Auto-Pilot Trading Daemon (Continuous Execution)")
-    st.caption("Background execution worker: continuously monitors live market ticks & candle closes, autonomously executes verified setups (conviction >= 8.0/10), places hard safety SL-M orders, and auto-squares off at 3:15 PM IST.")
-    
-    ai_daemon = AutonomousAIDaemon.get_instance()
-    llm_instance_current = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key) if (ai_api_key or prov_key == "ollama") else None
-    
-    d_col1, d_col2, d_col3, d_col4 = st.columns([2, 1.5, 1.5, 1.5])
-    with d_col1:
-        if ai_daemon.is_active:
-            if st.button("⏸️ Stop Autonomous Auto-Pilot Daemon", type="secondary", use_container_width=True):
-                ai_daemon.stop()
-                st.rerun()
-        else:
-            if st.button("🚀 Start Autonomous Auto-Pilot Daemon", type="primary", use_container_width=True):
-                if not llm_instance_current or not llm_instance_current.is_configured():
-                    st.warning("⚠️ Please configure your AI Provider in Step 1 first!")
-                else:
-                    ai_daemon.start(
-                        llm_client=llm_instance_current,
-                        guardrails=ai_guardrails,
-                        broker=active_ai_broker,
-                        is_live_mode=is_live_selected,
-                        interval=20
-                    )
-                    st.rerun()
-    with d_col2:
-        st.metric("Daemon Status", "🟢 ACTIVE" if ai_daemon.is_active else "⚪ IDLE")
-    with d_col3:
-        st.metric("Scan Frequency", f"{ai_daemon.scan_interval}s")
-    with d_col4:
-        st.metric("Auto-Trades Filled", f"{ai_daemon.trades_executed_today}")
-        
-    # Real-Time AI Thought Stream (Zero-lag auto-updating fragment)
-    @st.fragment(run_every=2)
-    def render_ai_thought_stream_fragment():
-        d_inst = AutonomousAIDaemon.get_instance()
-        thoughts = d_inst.get_thought_stream()
-        if thoughts:
-            st.markdown("**🧠 Live AI Internal Thought & Action Stream** *(Auto-updating real-time feed)*")
-            thought_html_lines = []
-            for t in thoughts[:12]:
-                lvl = t.get("level", "INFO")
-                color = "#10b981" if lvl == "EXECUTE" else "#38bdf8" if lvl == "SETUP" else "#f43f5e" if lvl == "RISK" else "#f59e0b" if lvl == "EXIT" else "#a855f7" if lvl == "MANAGEMENT" else "#94a3b8"
-                sym_tag = f"[{t.get('symbol')}]" if t.get('symbol') else ""
-                thought_html_lines.append(
-                    f"<div style='margin-bottom: 4px; line-height: 1.4;'><span style='color: #64748b; font-size: 0.78rem;'>{t.get('time')}</span> "
-                    f"<span style='color: {color}; font-weight: 700; font-size: 0.78rem;'>[{lvl}]</span> "
-                    f"<span style='color: #cbd5e1; font-weight: 600; font-size: 0.82rem;'>{sym_tag}</span> "
-                    f"<span style='color: #f1f5f9; font-size: 0.84rem;'>{t.get('message')}</span></div>"
-                )
-            st.markdown(
-                f"""<div style='background: #090d16; border: 1px solid #1e293b; border-radius: 8px; padding: 12px 16px; font-family: "JetBrains Mono", monospace; max-height: 220px; overflow-y: auto;'>
-                {''.join(thought_html_lines)}
-                </div>""",
-                unsafe_allow_html=True
-            )
-            
-    render_ai_thought_stream_fragment()
+                                <!-- Box 2: STOP-LOSS EXIT -->
+                                <div style='background: #090d16; border: 1px solid rgba(244, 63, 94, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
+                                    <div style='color: #f43f5e; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🛑 STOP-LOSS EXIT</div>
+                                    <div style='color: #f43f5e; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{sl_val:,.2f}</div>
+                                    <div style='color: #f43f5e; font-size: 0.75rem; font-weight: 700;'>Exit on -{sl_pct_calc}% (-₹{max_risk_inr:,.0f})</div>
+                                </div>
 
-    # Section 6: Smart Active Positions (50/50 Profit Booker & Trailing SL Visualizer)
+                                <!-- Box 3: TARGET 1 EXIT (50%) -->
+                                <div style='background: #090d16; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
+                                    <div style='color: #10b981; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🎯 TARGET 1 EXIT (50%)</div>
+                                    <div style='color: #10b981; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{t1_val:,.2f}</div>
+                                    <div style='color: #10b981; font-size: 0.75rem; font-weight: 700;'>Book 50% (+{t1_pct_calc}% / +₹{exp_gain_inr:,.0f})</div>
+                                </div>
+
+                                <!-- Box 4: TARGET 2 EXIT (100%) -->
+                                <div style='background: #090d16; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
+                                    <div style='color: #10b981; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🚀 TARGET 2 EXIT (100%)</div>
+                                    <div style='color: #10b981; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{t2_val:,.2f}</div>
+                                    <div style='color: #10b981; font-size: 0.75rem; font-weight: 700;'>Full Exit (+{t2_pct_calc}% / +₹{round(abs(t2_val-entry_val)*o_lot, 0):,.0f})</div>
+                                </div>
+                            </div>
+
+                            <!-- Quick Specs Strip -->
+                            <div style='display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.7); border: 1px solid #1e293b; border-radius: 6px; padding: 8px 14px; font-size: 0.82rem; color: #cbd5e1; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;'>
+                                <div>📦 <strong>Position:</strong> 1 Lot ({o_lot} Shares) &bull; Total Capital: <strong style='color: #38bdf8;'>₹{cap_val:,.0f}</strong></div>
+                                <div>🇮🇳 <strong>{o_sym.replace('^','')} Spot:</strong> ₹{u_spot:,.2f} (<span style='color: {"#10b981" if u_chg >= 0 else "#f43f5e"};'>{'+' if u_chg >= 0 else ''}{u_chg:.2f}%</span>) &bull; <strong>Trigger:</strong> Spot {'≥' if is_bull else '≤'} ₹{sp_trig_val:,.1f}</div>
+                                <div>⏱️ <strong>Holding Duration:</strong> {o_horizon}</div>
+                            </div>
+
+                            <!-- Setup Rationale -->
+                            <div style='color: #94a3b8; font-size: 0.84rem; line-height: 1.4;'>
+                                🧠 <strong style='color: #e2e8f0;'>Strategy:</strong> {o_setup} &mdash; {o_reason}
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # Clean 1-Click Execution Button
+                        if st.button(f"🚀 1-Click Execute #{o_rank}: Buy {contract_title} @ ₹{live_p:,.1f} (₹{cap_val:,.0f})", key=f"btn_exec_opp_{i}", type="primary", use_container_width=True):
+                            llm_instance = LLMClient(provider=prov_key, model=model_choice, api_key=ai_api_key) if (ai_api_key and len(ai_api_key.strip()) >= 5) else None
+                            agent = AITradingAgent(
+                                llm_client=llm_instance,
+                                guardrails=ai_guardrails,
+                                broker=active_ai_broker,
+                                is_live_mode=is_live_selected
+                            )
+                            opp_exec = dict(opp)
+                            opp_exec["entry_price"] = live_p
+                            exec_outcome = agent.execute_radar_opportunity(opp_exec)
+                            if exec_outcome.get("status") == "EXECUTED":
+                                st.success(f"✅ Trade Executed! Symbol: `{exec_outcome.get('symbol')}` @ ₹{live_p:,.2f}")
+                                st.rerun()
+                            else:
+                                st.error(f"❌ Execution Blocked: {exec_outcome.get('message')}")
+                        st.write("")
+            elif r_data.get("status") == "ERROR":
+                st.error(f"❌ {r_data.get('message')}")
+                
+    render_opportunity_cards_fragment()
+
     st.markdown("---")
     st.subheader("🧠 Multi-Agent AI Strategy Council & Autonomous Market Hunter")
     st.caption("3 specialized orthogonal AI agents evaluate candidate breakouts with 2-stage gating and software-managed OCO execution (entry + standalone exchange SL-M order).")
@@ -2001,6 +1817,68 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                 st.warning(f"Order Status: {exec_res}")
         except Exception as eval_err:
             st.error(f"❌ **AI Evaluation Error:** {str(eval_err)}")
+
+    # Optional Collapsed Settings Expander
+    st.markdown("---")
+    with st.expander("⚙️ **Optional Bot Settings (AI Brain Provider, API Keys & Zerodha Broker Link)**", expanded=False):
+        set_col1, set_col2 = st.columns(2)
+        with set_col1:
+            provider_options = [
+                "🔵 Google Gemini (Gemini 3.1 Flash-Lite / Gemini 3 / Gemma 4 — Ultra Low Cost)",
+                "⚡ Groq (Llama 3.3 70B — Ultra Low Latency <250ms)",
+                "🟣 Anthropic Claude (Claude 3.7 Sonnet — Latest Hybrid Reasoning)",
+                "🟢 OpenAI (GPT-4o / GPT-4o-mini)",
+                "🔴 DeepSeek (DeepSeek-Chat / Reasoner)",
+                "🌙 Kimi / Moonshot AI (Ultra Fast & Long Context)",
+                "💻 Local Ollama (DeepSeek-R1 / Llama 3 — 100% Free & Offline)"
+            ]
+            prov_to_idx = {"gemini": 0, "groq": 1, "anthropic": 2, "openai": 3, "deepseek": 4, "kimi": 5, "ollama": 6}
+            opt_provider = st.selectbox("Select AI Brain Provider:", provider_options, index=prov_to_idx.get(saved_prov, 0), key="opt_prov_select")
+            
+            if "Gemini" in opt_provider:
+                p_code = "gemini"
+                m_def = "gemini-3.1-flash-lite"
+            elif "Groq" in opt_provider:
+                p_code = "groq"
+                m_def = "llama-3.3-70b-versatile"
+            elif "Anthropic" in opt_provider:
+                p_code = "anthropic"
+                m_def = "claude-3-7-sonnet-20250219"
+            elif "Kimi" in opt_provider:
+                p_code = "kimi"
+                m_def = "moonshot-v1-8k"
+            elif "OpenAI" in opt_provider:
+                p_code = "openai"
+                m_def = "gpt-4o"
+            elif "DeepSeek" in opt_provider:
+                p_code = "deepseek"
+                m_def = "deepseek-chat"
+            elif "Ollama" in opt_provider:
+                p_code = "ollama"
+                m_def = "deepseek-r1:latest"
+            else:
+                p_code = "gemini"
+                m_def = "gemini-3.1-flash-lite"
+                
+            opt_model = st.text_input("AI Model Name:", value=m_def, key="opt_model_name")
+            opt_key = st.text_input(f"Enter {p_code.upper()} API Key:", type="password", key=f"opt_key_{p_code}", placeholder=f"Paste your {p_code.upper()} key here...")
+            
+            if st.button("💾 Save AI Brain Settings", use_container_width=True):
+                save_ai_settings({
+                    "provider": p_code,
+                    "model": opt_model,
+                    "api_key": opt_key,
+                    "is_connected": True,
+                    "updated_at": get_ist_now().isoformat()
+                })
+                st.success("✅ AI Brain Settings Saved Successfully!")
+                st.rerun()
+                
+        with set_col2:
+            st.markdown("**🛡️ Risk & Guardrail Limits:**")
+            opt_loss = st.number_input("Max Daily Loss Limit (₹):", min_value=500.0, value=2000.0, step=500.0, key="opt_loss_lim")
+            opt_conf = st.slider("Min AI Confidence Threshold (/10):", min_value=6.0, max_value=9.5, value=7.5, step=0.1, key="opt_conf_lim")
+            st.caption("🔒 All trades strictly pass through zero-bypass mathematical guardrails before execution.")
 
     # Section 8: Multi-Regime Historical Stress Replay
     st.markdown("---")
