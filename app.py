@@ -1402,6 +1402,12 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                 </div>
                 """, unsafe_allow_html=True)
                 
+            st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+            if st.button("🚨 Square Off All Active Positions (Clean Slate)", key="btn_sq_off_ai_daemon", type="secondary", use_container_width=True):
+                active_ai_broker.square_off_all(reason="Manual Clean Slate Reset")
+                st.success("✅ All positions squared off! Margin restored.")
+                st.rerun()
+                
     render_active_positions_feed()
 
     st.markdown("---")
@@ -1526,64 +1532,52 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                         t1_pct_calc = abs(round(((t1_val - entry_val) / max(0.01, entry_val)) * 100, 1))
                         t2_pct_calc = abs(round(((t2_val - entry_val) / max(0.01, entry_val)) * 100, 1))
                         
-                        st.markdown(f"""
-                        <div style='background: linear-gradient(135deg, #0d121f 0%, #111827 100%); border: 1px solid #1e293b; border-left: 5px solid {card_border}; border-radius: 12px; padding: 18px 22px; margin-bottom: 16px;'>
-                            <!-- Header Row -->
-                            <div style='display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 12px; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;'>
-                                <div>
-                                    <span style='font-size: 1.25rem; font-weight: 800; color: #ffffff; font-family: "Outfit", sans-serif;'>#{o_rank} {contract_title}</span>
-                                    <span style='background: {action_badge_bg}; color: {action_badge_color}; border: 1px solid {action_badge_color}40; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px; margin-left: 8px;'>{o_act}</span>
-                                </div>
-                                <div style='display: flex; gap: 10px; align-items: center;'>
-                                    <span style='color: #94a3b8; font-size: 0.82rem;'>📅 Expiry: <strong style='color: #f1f5f9;'>{o_exp_str}</strong></span>
-                                    <span style='background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px;'>⭐ {o_conf:.1f}/10 Conviction</span>
-                                </div>
-                            </div>
-
-                            <!-- 4 Direct Action Boxes: Entry, SL Exit, Target 1 Exit, Target 2 Exit -->
-                            <div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 14px;'>
-                                <!-- Box 1: BUY ENTRY PRICE -->
-                                <div style='background: #090d16; border: 1px solid #38bdf8; border-radius: 8px; padding: 12px; text-align: center;'>
-                                    <div style='color: #38bdf8; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🟢 BUY ENTRY PRICE</div>
-                                    <div style='color: #ffffff; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{entry_val:,.2f}</div>
-                                    <div style='color: {zone_color}; font-size: 0.75rem; font-weight: 700;'>{zone_text}</div>
-                                </div>
-
-                                <!-- Box 2: STOP-LOSS EXIT -->
-                                <div style='background: #090d16; border: 1px solid rgba(244, 63, 94, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
-                                    <div style='color: #f43f5e; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🛑 STOP-LOSS EXIT</div>
-                                    <div style='color: #f43f5e; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{sl_val:,.2f}</div>
-                                    <div style='color: #f43f5e; font-size: 0.75rem; font-weight: 700;'>Exit on -{sl_pct_calc}% (-₹{max_risk_inr:,.0f})</div>
-                                </div>
-
-                                <!-- Box 3: TARGET 1 EXIT (50%) -->
-                                <div style='background: #090d16; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
-                                    <div style='color: #10b981; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🎯 TARGET 1 EXIT (50%)</div>
-                                    <div style='color: #10b981; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{t1_val:,.2f}</div>
-                                    <div style='color: #10b981; font-size: 0.75rem; font-weight: 700;'>Book 50% (+{t1_pct_calc}% / +₹{exp_gain_inr:,.0f})</div>
-                                </div>
-
-                                <!-- Box 4: TARGET 2 EXIT (100%) -->
-                                <div style='background: #090d16; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
-                                    <div style='color: #10b981; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🚀 TARGET 2 EXIT (100%)</div>
-                                    <div style='color: #10b981; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{t2_val:,.2f}</div>
-                                    <div style='color: #10b981; font-size: 0.75rem; font-weight: 700;'>Full Exit (+{t2_pct_calc}% / +₹{round(abs(t2_val-entry_val)*o_lot, 0):,.0f})</div>
-                                </div>
-                            </div>
-
-                            <!-- Quick Specs Strip -->
-                            <div style='display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.7); border: 1px solid #1e293b; border-radius: 6px; padding: 8px 14px; font-size: 0.82rem; color: #cbd5e1; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;'>
-                                <div>📦 <strong>Position:</strong> 1 Lot ({o_lot} Shares) &bull; Total Capital: <strong style='color: #38bdf8;'>₹{cap_val:,.0f}</strong></div>
-                                <div>🇮🇳 <strong>{o_sym.replace('^','')} Spot:</strong> ₹{u_spot:,.2f} (<span style='color: {"#10b981" if u_chg >= 0 else "#f43f5e"};'>{'+' if u_chg >= 0 else ''}{u_chg:.2f}%</span>) &bull; <strong>Trigger:</strong> Spot {'≥' if is_bull else '≤'} ₹{sp_trig_val:,.1f}</div>
-                                <div>⏱️ <strong>Holding Duration:</strong> {o_horizon}</div>
-                            </div>
-
-                            <!-- Setup Rationale -->
-                            <div style='color: #94a3b8; font-size: 0.84rem; line-height: 1.4;'>
-                                🧠 <strong style='color: #e2e8f0;'>Strategy:</strong> {o_setup} &mdash; {o_reason}
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        import textwrap
+                        card_html = textwrap.dedent(f"""
+<div style='background: linear-gradient(135deg, #0d121f 0%, #111827 100%); border: 1px solid #1e293b; border-left: 5px solid {card_border}; border-radius: 12px; padding: 18px 22px; margin-bottom: 16px;'>
+<div style='display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 12px; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;'>
+<div>
+<span style='font-size: 1.25rem; font-weight: 800; color: #ffffff; font-family: "Outfit", sans-serif;'>#{o_rank} {contract_title}</span>
+<span style='background: {action_badge_bg}; color: {action_badge_color}; border: 1px solid {action_badge_color}40; font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px; margin-left: 8px;'>{o_act}</span>
+</div>
+<div style='display: flex; gap: 10px; align-items: center;'>
+<span style='color: #94a3b8; font-size: 0.82rem;'>📅 Expiry: <strong style='color: #f1f5f9;'>{o_exp_str}</strong></span>
+<span style='background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.78rem; font-weight: 700; padding: 3px 10px; border-radius: 6px;'>⭐ {o_conf:.1f}/10 Conviction</span>
+</div>
+</div>
+<div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 14px;'>
+<div style='background: #090d16; border: 1px solid #38bdf8; border-radius: 8px; padding: 12px; text-align: center;'>
+<div style='color: #38bdf8; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🟢 BUY ENTRY PRICE</div>
+<div style='color: #ffffff; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{entry_val:,.2f}</div>
+<div style='color: {zone_color}; font-size: 0.75rem; font-weight: 700;'>{zone_text}</div>
+</div>
+<div style='background: #090d16; border: 1px solid rgba(244, 63, 94, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
+<div style='color: #f43f5e; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🛑 STOP-LOSS EXIT</div>
+<div style='color: #f43f5e; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{sl_val:,.2f}</div>
+<div style='color: #f43f5e; font-size: 0.75rem; font-weight: 700;'>Exit on -{sl_pct_calc}% (-₹{max_risk_inr:,.0f})</div>
+</div>
+<div style='background: #090d16; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
+<div style='color: #10b981; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🎯 TARGET 1 EXIT (50%)</div>
+<div style='color: #10b981; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{t1_val:,.2f}</div>
+<div style='color: #10b981; font-size: 0.75rem; font-weight: 700;'>Book 50% (+{t1_pct_calc}% / +₹{exp_gain_inr:,.0f})</div>
+</div>
+<div style='background: #090d16; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 8px; padding: 12px; text-align: center;'>
+<div style='color: #10b981; font-size: 0.74rem; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;'>🚀 TARGET 2 EXIT (100%)</div>
+<div style='color: #10b981; font-size: 1.45rem; font-weight: 900; font-family: "JetBrains Mono", monospace; margin: 4px 0;'>₹{t2_val:,.2f}</div>
+<div style='color: #10b981; font-size: 0.75rem; font-weight: 700;'>Full Exit (+{t2_pct_calc}% / +₹{round(abs(t2_val-entry_val)*o_lot, 0):,.0f})</div>
+</div>
+</div>
+<div style='display: flex; justify-content: space-between; align-items: center; background: rgba(15, 23, 42, 0.7); border: 1px solid #1e293b; border-radius: 6px; padding: 8px 14px; font-size: 0.82rem; color: #cbd5e1; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;'>
+<div>📦 <strong>Position:</strong> 1 Lot ({o_lot} Shares) &bull; Total Capital: <strong style='color: #38bdf8;'>₹{cap_val:,.0f}</strong></div>
+<div>🇮🇳 <strong>{o_sym.replace('^','')} Spot:</strong> ₹{u_spot:,.2f} (<span style='color: {"#10b981" if u_chg >= 0 else "#f43f5e"};'>{'+' if u_chg >= 0 else ''}{u_chg:.2f}%</span>) &bull; <strong>Trigger:</strong> Spot {'≥' if is_bull else '≤'} ₹{sp_trig_val:,.1f}</div>
+<div>⏱️ <strong>Holding Duration:</strong> {o_horizon}</div>
+</div>
+<div style='color: #94a3b8; font-size: 0.84rem; line-height: 1.4;'>
+🧠 <strong style='color: #e2e8f0;'>Strategy:</strong> {o_setup} &mdash; {o_reason}
+</div>
+</div>
+""")
+                        st.markdown(card_html, unsafe_allow_html=True)
                         
                         # Clean 1-Click Execution Button
                         if st.button(f"🚀 1-Click Execute #{o_rank}: Buy {contract_title} @ ₹{live_p:,.1f} (₹{cap_val:,.0f})", key=f"btn_exec_opp_{i}", type="primary", use_container_width=True):
@@ -1693,36 +1687,38 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                 bp_risk_inr = round(abs(bp_entry - bp_sl) * bp_qty, 0)
                 bp_gain_inr = round(abs(bp_t1 - bp_entry) * bp_qty, 0)
 
-                st.markdown(f"""
-                <div style='background: #090d16; border: 1px solid #1e293b; border-radius: 10px; padding: 14px 18px; margin-top: 14px;'>
-                    <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;'>
-                        <div style='color: #38bdf8; font-size: 0.85rem; font-weight: 800; text-transform: uppercase;'>🎯 Council Actionable Trade Blueprint</div>
-                        <span class='{"badge-bull" if c_app else "badge-neutral"}'>R:R 1:2.0 &bull; MIS Intraday (3:15 PM Auto-Exit)</span>
-                    </div>
-                    <div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px;'>
-                        <div style='background: #111622; border: 1px solid #38bdf8; border-radius: 6px; padding: 10px; text-align: center;'>
-                            <div style='color: #38bdf8; font-size: 0.70rem; font-weight: 800;'>🟢 BUY ENTRY</div>
-                            <div style='color: #ffffff; font-size: 1.3rem; font-weight: 900; font-family: "JetBrains Mono", monospace;'>₹{bp_entry:,.2f}</div>
-                            <div style='color: #94a3b8; font-size: 0.72rem;'>{bp.get("entry_zone", f"₹{bp_entry:,.2f}")}</div>
-                        </div>
-                        <div style='background: #111622; border: 1px solid rgba(244, 63, 94, 0.5); border-radius: 6px; padding: 10px; text-align: center;'>
-                            <div style='color: #f43f5e; font-size: 0.70rem; font-weight: 800;'>🛑 SAFETY STOP-LOSS</div>
-                            <div style='color: #f43f5e; font-size: 1.3rem; font-weight: 900; font-family: "JetBrains Mono", monospace;'>₹{bp_sl:,.2f}</div>
-                            <div style='color: #f43f5e; font-size: 0.72rem;'>-{bp_sl_pct:.1f}% (-₹{bp_risk_inr:,.0f})</div>
-                        </div>
-                        <div style='background: #111622; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 6px; padding: 10px; text-align: center;'>
-                            <div style='color: #10b981; font-size: 0.70rem; font-weight: 800;'>🎯 TARGET 1 (50% LOCK)</div>
-                            <div style='color: #10b981; font-size: 1.3rem; font-weight: 900; font-family: "JetBrains Mono", monospace;'>₹{bp_t1:,.2f}</div>
-                            <div style='color: #10b981; font-size: 0.72rem;'>+{bp_t1_pct:.1f}% (+₹{bp_gain_inr:,.0f})</div>
-                        </div>
-                        <div style='background: #111622; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 6px; padding: 10px; text-align: center;'>
-                            <div style='color: #10b981; font-size: 0.70rem; font-weight: 800;'>🚀 TARGET 2 (RUNNER)</div>
-                            <div style='color: #10b981; font-size: 1.3rem; font-weight: 900; font-family: "JetBrains Mono", monospace;'>₹{bp_t2:,.2f}</div>
-                            <div style='color: #10b981; font-size: 0.72rem;'>+{bp_t2_pct:.1f}% (+₹{round(abs(bp_t2-bp_entry)*bp_qty, 0):,.0f})</div>
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                import textwrap
+                council_bp_html = textwrap.dedent(f"""
+<div style='background: #090d16; border: 1px solid #1e293b; border-radius: 10px; padding: 14px 18px; margin-top: 14px;'>
+<div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;'>
+<div style='color: #38bdf8; font-size: 0.85rem; font-weight: 800; text-transform: uppercase;'>🎯 Council Actionable Trade Blueprint</div>
+<span class='{"badge-bull" if c_app else "badge-neutral"}'>R:R 1:2.0 &bull; MIS Intraday (3:15 PM Auto-Exit)</span>
+</div>
+<div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px;'>
+<div style='background: #111622; border: 1px solid #38bdf8; border-radius: 6px; padding: 10px; text-align: center;'>
+<div style='color: #38bdf8; font-size: 0.70rem; font-weight: 800;'>🟢 BUY ENTRY</div>
+<div style='color: #ffffff; font-size: 1.3rem; font-weight: 900; font-family: "JetBrains Mono", monospace;'>₹{bp_entry:,.2f}</div>
+<div style='color: #94a3b8; font-size: 0.72rem;'>{bp.get("entry_zone", f"₹{bp_entry:,.2f}")}</div>
+</div>
+<div style='background: #111622; border: 1px solid rgba(244, 63, 94, 0.5); border-radius: 6px; padding: 10px; text-align: center;'>
+<div style='color: #f43f5e; font-size: 0.70rem; font-weight: 800;'>🛑 SAFETY STOP-LOSS</div>
+<div style='color: #f43f5e; font-size: 1.3rem; font-weight: 900; font-family: "JetBrains Mono", monospace;'>₹{bp_sl:,.2f}</div>
+<div style='color: #f43f5e; font-size: 0.72rem;'>-{bp_sl_pct:.1f}% (-₹{bp_risk_inr:,.0f})</div>
+</div>
+<div style='background: #111622; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 6px; padding: 10px; text-align: center;'>
+<div style='color: #10b981; font-size: 0.70rem; font-weight: 800;'>🎯 TARGET 1 (50% LOCK)</div>
+<div style='color: #10b981; font-size: 1.3rem; font-weight: 900; font-family: "JetBrains Mono", monospace;'>₹{bp_t1:,.2f}</div>
+<div style='color: #10b981; font-size: 0.72rem;'>+{bp_t1_pct:.1f}% (+₹{bp_gain_inr:,.0f})</div>
+</div>
+<div style='background: #111622; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 6px; padding: 10px; text-align: center;'>
+<div style='color: #10b981; font-size: 0.70rem; font-weight: 800;'>🚀 TARGET 2 (RUNNER)</div>
+<div style='color: #10b981; font-size: 1.3rem; font-weight: 900; font-family: "JetBrains Mono", monospace;'>₹{bp_t2:,.2f}</div>
+<div style='color: #10b981; font-size: 0.72rem;'>+{bp_t2_pct:.1f}% (+₹{round(abs(bp_t2-bp_entry)*bp_qty, 0):,.0f})</div>
+</div>
+</div>
+</div>
+""")
+                st.markdown(council_bp_html, unsafe_allow_html=True)
                 
                 st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
                 if st.button(f"🚀 1-Click Place {bp_act} Order: {c_res.get('display_name')} @ ₹{bp_entry:,.2f} (₹{bp_cap:,.0f})", key=f"btn_council_order_{c_sym}", type="primary", use_container_width=True):
