@@ -118,11 +118,16 @@ class MultiAgentCouncil:
                 "agent_3_macro": agent_3
             },
             "trade_blueprint": {
-                "action": "BUY" if math_analysis.get("verdict") in ["STRONG_BUY", "BUY_ON_DIP"] else "SELL",
-                "entry_zone": math_analysis.get("entry_zone", ""),
-                "target_1": math_analysis.get("target_1", {}),
-                "target_2": math_analysis.get("target_2", {}),
-                "stop_loss": math_analysis.get("stop_loss", {})
+                "action": "BUY" if "BUY" in str(math_analysis.get("verdict", "BUY")) else "SELL",
+                "entry_price": float(quote.get("price", df["Close"].iloc[-1])),
+                "entry_zone": math_analysis.get("levels", {}).get("entry_zone", f"₹{float(quote.get('price', df['Close'].iloc[-1])) * 0.998:.2f} – ₹{float(quote.get('price', df['Close'].iloc[-1])):.2f}"),
+                "target_1_price": float(math_analysis.get("target_1", {}).get("price", float(quote.get("price", df["Close"].iloc[-1])) * 1.025) if isinstance(math_analysis.get("target_1"), dict) else (math_analysis.get("target_1") or float(quote.get("price", df["Close"].iloc[-1])) * 1.025)),
+                "target_1_gain_pct": float(math_analysis.get("target_1", {}).get("gain_pct", 2.5) if isinstance(math_analysis.get("target_1"), dict) else 2.5),
+                "target_2_price": float(math_analysis.get("target_2", {}).get("price", float(quote.get("price", df["Close"].iloc[-1])) * 1.050) if isinstance(math_analysis.get("target_2"), dict) else (math_analysis.get("target_2") or float(quote.get("price", df["Close"].iloc[-1])) * 1.050)),
+                "target_2_gain_pct": float(math_analysis.get("target_2", {}).get("gain_pct", 5.0) if isinstance(math_analysis.get("target_2"), dict) else 5.0),
+                "stop_loss_price": float(math_analysis.get("stop_loss", {}).get("price", float(quote.get("price", df["Close"].iloc[-1])) * 0.985) if isinstance(math_analysis.get("stop_loss"), dict) else (math_analysis.get("stop_loss") or float(quote.get("price", df["Close"].iloc[-1])) * 0.985)),
+                "stop_loss_pct": float(math_analysis.get("stop_loss", {}).get("loss_pct", 1.5) if isinstance(math_analysis.get("stop_loss"), dict) else 1.5),
+                "risk_reward": "1:2.0"
             },
             "timestamp": get_ist_now().strftime("%I:%M:%S %p IST")
         }

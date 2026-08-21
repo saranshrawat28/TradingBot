@@ -186,7 +186,7 @@ class AutonomousAIDaemon:
             # Build agent and execute
             agent = AITradingAgent(
                 llm_client=self.llm_client,
-                guardrails=self.guardrails or AIGuardrails(self.broker),
+                guardrails=self.guardrails or AIGuardrails(),
                 broker=self.broker,
                 is_live_mode=self.is_live_mode
             )

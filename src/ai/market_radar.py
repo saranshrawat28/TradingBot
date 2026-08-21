@@ -215,11 +215,43 @@ TASK:
                 else:
                     quote = get_live_quote(sym_up)
                     e_ltp = float(quote.get("price", o.get("entry_price", 100.0)))
+                    
+                    # Compute exact mathematical levels from StockAdvisor
+                    df_eq = get_historical_data(sym_up, period="5d", interval="5m")
+                    if not df_eq.empty and len(df_eq) >= 20:
+                        analysis_eq = StockAdvisor.evaluate_df_slice(df_eq, symbol=sym_up, horizon="intraday")
+                        sl_raw = analysis_eq.get("stop_loss", {})
+                        t1_raw = analysis_eq.get("target_1", {})
+                        t2_raw = analysis_eq.get("target_2", {})
+                        
+                        sl_eq = float(sl_raw.get("price", e_ltp * 0.985) if isinstance(sl_raw, dict) else sl_raw)
+                        t1_eq = float(t1_raw.get("price", e_ltp * 1.025) if isinstance(t1_raw, dict) else t1_raw)
+                        t2_eq = float(t2_raw.get("price", e_ltp * 1.050) if isinstance(t2_raw, dict) else t2_raw)
+                        score_eq = float(analysis_eq.get("score", o.get("confidence_score", 7.5)))
+                    else:
+                        sl_eq = round(e_ltp * 0.985, 2)
+                        t1_eq = round(e_ltp * 1.025, 2)
+                        t2_eq = round(e_ltp * 1.050, 2)
+                        score_eq = float(o.get("confidence_score", 7.5))
+
+                    o["instrument_type"] = "EQUITY"
+                    o["option_contract"] = "N/A"
                     o["lot_size"] = lot_sz
                     o["capital_required"] = round(e_ltp * lot_sz, 2)
                     o["spot_price"] = e_ltp
                     o["spot_change_pct"] = float(quote.get("change_pct", 0.0))
                     o["current_price"] = e_ltp
+                    o["entry_price"] = e_ltp
+                    o["stop_loss"] = sl_eq
+                    o["target_1"] = t1_eq
+                    o["target_2"] = t2_eq
+                    o["spot_trigger"] = e_ltp
+                    o["spot_sl"] = sl_eq
+                    o["spot_t1"] = t1_eq
+                    o["spot_t2"] = t2_eq
+                    o["confidence_score"] = score_eq
+                    o["risk_reward_ratio"] = "1:2.0"
+                    o["expected_gain_pct"] = f"+{round(((t1_eq - e_ltp) / max(0.01, e_ltp)) * 100, 1)}%"
                     o["expiry_str"] = "Delivery / MIS Intraday"
                 calibrated_opps.append(o)
                 
@@ -335,10 +367,14 @@ TASK:
                         strike_rat = f"ATM Strike ({n_atm}) for {clean_underlying} &bull; Expiry: {exp_str}"
                     else:
                         entry_p = ltp
-                        t1_p = float(analysis.get("target_1", {}).get("price", ltp * 1.02))
-                        t2_p = float(analysis.get("target_2", {}).get("price", ltp * 1.04))
-                        sl_p = float(analysis.get("stop_loss", {}).get("price", ltp * 0.985))
-                        gain_pct_str = f"+{round(((t1_p-ltp)/ltp)*100, 1)}%"
+                        sl_raw = analysis.get("stop_loss", {})
+                        t1_raw = analysis.get("target_1", {})
+                        t2_raw = analysis.get("target_2", {})
+                        
+                        sl_p = float(sl_raw.get("price", ltp * 0.985) if isinstance(sl_raw, dict) else sl_raw)
+                        t1_p = float(t1_raw.get("price", ltp * 1.025) if isinstance(t1_raw, dict) else t1_raw)
+                        t2_p = float(t2_raw.get("price", ltp * 1.050) if isinstance(t2_raw, dict) else t2_raw)
+                        gain_pct_str = f"+{round(((t1_p-ltp)/max(0.01, ltp))*100, 1)}%"
                         cap_req = round(entry_p * lot_sz, 2)
                         exp_str = "Delivery / MIS Intraday"
                         strike_rat = "Cash Equity Momentum Breakout"

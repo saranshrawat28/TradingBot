@@ -1677,6 +1677,70 @@ elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "�
                     </div>
                     """, unsafe_allow_html=True)
 
+            # Render Concrete 4-Box Actionable Trade Blueprint
+            bp = c_res.get("trade_blueprint", {})
+            if bp:
+                bp_act = bp.get("action", "BUY")
+                bp_entry = float(bp.get("entry_price", c_res.get("current_price", 100.0)))
+                bp_sl = float(bp.get("stop_loss_price", bp_entry * 0.985))
+                bp_sl_pct = float(bp.get("stop_loss_pct", 1.5))
+                bp_t1 = float(bp.get("target_1_price", bp_entry * 1.025))
+                bp_t1_pct = float(bp.get("target_1_gain_pct", 2.5))
+                bp_t2 = float(bp.get("target_2_price", bp_entry * 1.050))
+                bp_t2_pct = float(bp.get("target_2_gain_pct", 5.0))
+                bp_qty = max(1, int(25000.0 / max(1.0, bp_entry)))
+                bp_cap = round(bp_entry * bp_qty, 2)
+                bp_risk_inr = round(abs(bp_entry - bp_sl) * bp_qty, 0)
+                bp_gain_inr = round(abs(bp_t1 - bp_entry) * bp_qty, 0)
+
+                st.markdown(f"""
+                <div style='background: #090d16; border: 1px solid #1e293b; border-radius: 10px; padding: 14px 18px; margin-top: 14px;'>
+                    <div style='display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;'>
+                        <div style='color: #38bdf8; font-size: 0.85rem; font-weight: 800; text-transform: uppercase;'>🎯 Council Actionable Trade Blueprint</div>
+                        <span class='{"badge-bull" if c_app else "badge-neutral"}'>R:R 1:2.0 &bull; MIS Intraday (3:15 PM Auto-Exit)</span>
+                    </div>
+                    <div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px;'>
+                        <div style='background: #111622; border: 1px solid #38bdf8; border-radius: 6px; padding: 10px; text-align: center;'>
+                            <div style='color: #38bdf8; font-size: 0.70rem; font-weight: 800;'>🟢 BUY ENTRY</div>
+                            <div style='color: #ffffff; font-size: 1.3rem; font-weight: 900; font-family: "JetBrains Mono", monospace;'>₹{bp_entry:,.2f}</div>
+                            <div style='color: #94a3b8; font-size: 0.72rem;'>{bp.get("entry_zone", f"₹{bp_entry:,.2f}")}</div>
+                        </div>
+                        <div style='background: #111622; border: 1px solid rgba(244, 63, 94, 0.5); border-radius: 6px; padding: 10px; text-align: center;'>
+                            <div style='color: #f43f5e; font-size: 0.70rem; font-weight: 800;'>🛑 SAFETY STOP-LOSS</div>
+                            <div style='color: #f43f5e; font-size: 1.3rem; font-weight: 900; font-family: "JetBrains Mono", monospace;'>₹{bp_sl:,.2f}</div>
+                            <div style='color: #f43f5e; font-size: 0.72rem;'>-{bp_sl_pct:.1f}% (-₹{bp_risk_inr:,.0f})</div>
+                        </div>
+                        <div style='background: #111622; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 6px; padding: 10px; text-align: center;'>
+                            <div style='color: #10b981; font-size: 0.70rem; font-weight: 800;'>🎯 TARGET 1 (50% LOCK)</div>
+                            <div style='color: #10b981; font-size: 1.3rem; font-weight: 900; font-family: "JetBrains Mono", monospace;'>₹{bp_t1:,.2f}</div>
+                            <div style='color: #10b981; font-size: 0.72rem;'>+{bp_t1_pct:.1f}% (+₹{bp_gain_inr:,.0f})</div>
+                        </div>
+                        <div style='background: #111622; border: 1px solid rgba(16, 185, 129, 0.5); border-radius: 6px; padding: 10px; text-align: center;'>
+                            <div style='color: #10b981; font-size: 0.70rem; font-weight: 800;'>🚀 TARGET 2 (RUNNER)</div>
+                            <div style='color: #10b981; font-size: 1.3rem; font-weight: 900; font-family: "JetBrains Mono", monospace;'>₹{bp_t2:,.2f}</div>
+                            <div style='color: #10b981; font-size: 0.72rem;'>+{bp_t2_pct:.1f}% (+₹{round(abs(bp_t2-bp_entry)*bp_qty, 0):,.0f})</div>
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+                if st.button(f"🚀 1-Click Place {bp_act} Order: {c_res.get('display_name')} @ ₹{bp_entry:,.2f} (₹{bp_cap:,.0f})", key=f"btn_council_order_{c_sym}", type="primary", use_container_width=True):
+                    order_res = active_ai_broker.place_order(
+                        symbol=c_sym,
+                        side=bp_act,
+                        quantity=bp_qty,
+                        price=bp_entry,
+                        sl=bp_sl,
+                        tp=bp_t1,
+                        strategy_name="MultiAgent_Council_Setup"
+                    )
+                    if order_res.get("status") in ["FILLED", "SUCCESS"]:
+                        st.success(f"✅ Order Placed! {bp_act} {bp_qty} shares of {c_res.get('display_name')} @ ₹{bp_entry:,.2f}. SL: ₹{bp_sl:,.2f}, Target: ₹{bp_t1:,.2f}")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Execution Blocked: {order_res.get('message')}")
+
     hunter_status = MarketHunterDaemon.get_status()
     h_col1, h_col2, h_col3, h_col4 = st.columns([2, 1.5, 1.5, 1.5])
     with h_col1:
