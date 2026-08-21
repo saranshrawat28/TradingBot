@@ -354,6 +354,10 @@ def calculate_mtf_alignment(df_5m: pd.DataFrame) -> dict:
         if not isinstance(df_copy.index, pd.DatetimeIndex):
             return {"mu_mtf": 1.00, "status": "NEUTRAL", "ema50_15m": 0.0, "st_dir_15m": 0}
 
+        # If data is hourly or daily, bypass intraday 15m resampling
+        if len(df_copy) >= 2 and (df_copy.index[-1] - df_copy.index[0]) / len(df_copy) >= pd.Timedelta(hours=1):
+            return {"mu_mtf": 1.00, "status": "NEUTRAL", "ema50_15m": 0.0, "st_dir_15m": 0}
+
         df_15m = df_copy.resample('15min').agg({
             'Open': 'first',
             'High': 'max',
