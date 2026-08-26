@@ -135,13 +135,9 @@ class AutonomousAIDaemon:
         # 2. Position Management: Manage active open positions with SmartTradeManager
         if self.broker:
             try:
-                positions = self.broker.get_positions()
-                if positions:
-                    for pos in positions:
-                        sym = pos.get("symbol")
-                        res = SmartTradeManager.evaluate_and_manage_position(pos, self.broker)
-                        if res.get("action") in ["TARGET_1_PARTIAL_EXIT", "TARGET_2_FULL_EXIT", "STOP_LOSS_EXIT", "TRAILING_STOP_EXIT"]:
-                            self._add_thought("MANAGEMENT", f"SmartTradeManager: {res.get('message')}", symbol=sym)
+                actions = SmartTradeManager.evaluate_and_manage_positions(self.broker)
+                for act in actions:
+                    self._add_thought("MANAGEMENT", f"SmartTradeManager: {act.get('message')}", symbol=act.get("symbol", "POSITION"))
             except Exception as e:
                 logger.warning(f"Position management check error: {e}")
 

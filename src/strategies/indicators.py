@@ -824,5 +824,366 @@ def calculate_vsa_structure(
     return {"pattern": "NORMAL", "description": "Standard order-flow structure.", "score_boost": 0.0, "is_trap": False}
 
 
+# =============================================================================
+# INSTITUTIONAL HEDGE-FUND & PROP-DESK QUANTITATIVE MODELS
+# =============================================================================
+
+def calculate_camarilla_pivots(high: float, low: float, close: float) -> Dict[str, float]:
+    """
+    Calculates 8-Level Institutional Camarilla Equation Pivots from previous session HLC.
+    - H4 / L4: Institutional Breakout & Momentum Expansion Triggers.
+    - H3 / L3: Institutional Mean-Reversion Reversal Floors & Ceilings.
+    - H5 / L5: Extended Trend Exhaustion Limits.
+    """
+    rng = high - low
+    if rng <= 0 or low <= 0:
+        return {
+            "h5": round(close * 1.05, 2), "h4": round(close * 1.02, 2), "h3": round(close * 1.01, 2),
+            "h2": round(close * 1.005, 2), "h1": round(close * 1.002, 2),
+            "l1": round(close * 0.998, 2), "l2": round(close * 0.995, 2), "l3": round(close * 0.99, 2),
+            "l4": round(close * 0.98, 2), "l5": round(close * 0.95, 2)
+        }
+
+    h5 = (high / low) * close
+    h4 = close + (rng * 1.1 / 2.0)
+    h3 = close + (rng * 1.1 / 4.0)
+    h2 = close + (rng * 1.1 / 6.0)
+    h1 = close + (rng * 1.1 / 12.0)
+
+    l1 = close - (rng * 1.1 / 12.0)
+    l2 = close - (rng * 1.1 / 6.0)
+    l3 = close - (rng * 1.1 / 4.0)
+    l4 = close - (rng * 1.1 / 2.0)
+    l5 = close - (h5 - close)
+
+    return {
+        "h5": round(h5, 2),
+        "h4": round(h4, 2),
+        "h3": round(h3, 2),
+        "h2": round(h2, 2),
+        "h1": round(h1, 2),
+        "l1": round(l1, 2),
+        "l2": round(l2, 2),
+        "l3": round(l3, 2),
+        "l4": round(l4, 2),
+        "l5": round(l5, 2)
+    }
+
+
+def calculate_volume_profile(df: pd.DataFrame, bins: int = 25) -> Dict[str, Any]:
+    """
+    Volume Profile (VPVR) & Point of Control (POC) Institutional Model:
+    - Point of Control (POC): Price level with the highest traded institutional volume.
+    - Value Area (VAH / VAL): 70% volume distribution representing institutional fair value.
+    - Location: Identifies if current price is in Value, at Discount (< VAL), or at Premium (> VAH).
+    """
+    if df.empty or len(df) < 5 or "Close" not in df.columns:
+        return {"poc": 0.0, "vah": 0.0, "val": 0.0, "location": "UNKNOWN", "poc_distance_pct": 0.0}
+
+    close = df["Close"]
+    high = df["High"] if "High" in df.columns else close
+    low = df["Low"] if "Low" in df.columns else close
+    volume = df["Volume"] if "Volume" in df.columns else pd.Series(1, index=df.index)
+
+    curr_p = float(close.iloc[-1])
+    p_min = float(low.min())
+    p_max = float(high.max())
+
+    if p_max <= p_min:
+        return {"poc": curr_p, "vah": curr_p, "val": curr_p, "location": "IN_VALUE", "poc_distance_pct": 0.0}
+
+    # Binning price levels
+    bin_edges = np.linspace(p_min, p_max, bins + 1)
+    bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
+    vol_by_bin = np.zeros(bins)
+
+    typical_prices = (high + low + close) / 3.0
+    vols = volume.values
+
+    # Accumulate volume per bin
+    bin_indices = np.digitize(typical_prices.values, bin_edges) - 1
+    bin_indices = np.clip(bin_indices, 0, bins - 1)
+
+    for b_idx, vol_val in zip(bin_indices, vols):
+        if not np.isnan(vol_val):
+            vol_by_bin[b_idx] += vol_val
+
+    # Find POC (bin with maximum volume)
+    poc_idx = int(np.argmax(vol_by_bin))
+    poc_price = round(float(bin_centers[poc_idx]), 2)
+
+    # Calculate 70% Value Area
+    total_vol = float(np.sum(vol_by_bin))
+    target_va_vol = 0.70 * total_vol
+    
+    # Sort bins by volume descending to build 70% Value Area
+    sorted_bin_indices = np.argsort(vol_by_bin)[::-1]
+    accum_vol = 0.0
+    va_indices = []
+    
+    for s_idx in sorted_bin_indices:
+        va_indices.append(s_idx)
+        accum_vol += vol_by_bin[s_idx]
+        if accum_vol >= target_va_vol:
+            break
+
+    va_prices = bin_centers[va_indices]
+    vah_price = round(float(np.max(va_prices)), 2)
+    val_price = round(float(np.min(va_prices)), 2)
+
+    # Location classification
+    if curr_p > vah_price:
+        location = "ABOVE_VALUE_PREMIUM"
+    elif curr_p < val_price:
+        location = "BELOW_VALUE_DISCOUNT"
+    else:
+        location = "INSIDE_FAIR_VALUE"
+
+    poc_dist_pct = round(((curr_p - poc_price) / poc_price) * 100.0, 2) if poc_price > 0 else 0.0
+
+    return {
+        "poc": poc_price,
+        "vah": vah_price,
+        "val": val_price,
+        "location": location,
+        "poc_distance_pct": poc_dist_pct,
+        "total_volume": total_vol
+    }
+
+
+def calculate_anchored_vwap(df: pd.DataFrame, anchor_idx: int = 0) -> pd.Series:
+    """
+    Calculates Anchored Volume Weighted Average Price (AVWAP) starting strictly from anchor_idx.
+    """
+    if df.empty:
+        return pd.Series(dtype=float)
+
+    close = df["Close"]
+    high = df["High"] if "High" in df.columns else close
+    low = df["Low"] if "Low" in df.columns else close
+    volume = df["Volume"] if "Volume" in df.columns else pd.Series(1, index=df.index)
+
+    typical_price = (high + low + close) / 3.0
+    pv = typical_price * volume
+
+    start_idx = max(0, min(len(df) - 1, anchor_idx))
+    
+    pv_slice = pv.iloc[start_idx:].cumsum()
+    vol_slice = volume.iloc[start_idx:].cumsum().replace(0, np.nan)
+    
+    avwap_slice = pv_slice / vol_slice
+    
+    full_avwap = pd.Series(np.nan, index=df.index)
+    full_avwap.iloc[start_idx:] = avwap_slice
+    return full_avwap.ffill().bfill()
+
+
+def calculate_hurst_exponent(series: pd.Series, max_lag: int = 20) -> float:
+    """
+    Calculates the Hurst Exponent (H) via Rescaled Range (R/S) Analysis:
+    - H > 0.55: Persistent Trending Regime (Momentum alpha active).
+    - 0.45 <= H <= 0.55: Random Walk / Choppy Range (Preserve capital).
+    - H < 0.45: Mean-Reverting Regime (Fade extremes).
+    """
+    if series is None or len(series) < max_lag:
+        return 0.50
+
+    try:
+        vals = series.values.astype(float)
+        returns = np.diff(np.log(vals + 1e-9))
+        if len(returns) < 10:
+            return 0.50
+
+        lags = []
+        rs_vals = []
+
+        for lag in range(4, min(max_lag + 1, len(returns) // 2 + 1)):
+            n_chunks = len(returns) // lag
+            if n_chunks == 0:
+                continue
+            chunk_rs = []
+            for i in range(n_chunks):
+                chunk = returns[i * lag : (i + 1) * lag]
+                std_c = np.std(chunk)
+                if std_c <= 1e-9:
+                    continue
+                mean_c = np.mean(chunk)
+                devs = np.cumsum(chunk - mean_c)
+                r_c = np.max(devs) - np.min(devs)
+                chunk_rs.append(r_c / std_c)
+            if chunk_rs:
+                lags.append(lag)
+                rs_vals.append(np.mean(chunk_rs))
+
+        if len(lags) < 3:
+            return 0.50
+
+        poly = np.polyfit(np.log(lags), np.log(rs_vals), 1)
+        h = float(poly[0])
+        return round(float(np.clip(h, 0.05, 0.95)), 3)
+    except Exception:
+        return 0.50
+
+
+def calculate_order_block_fvg(df: pd.DataFrame) -> Dict[str, Any]:
+    """
+    Smart Money Concepts (SMC): Fair Value Gap (FVG) and Order Block Detection.
+    - Bullish FVG: Low[i] > High[i-2] (Displacement buying gap).
+    - Bearish FVG: High[i] < Low[i-2] (Displacement selling gap).
+    """
+    if len(df) < 5:
+        return {"has_fvg": False, "fvg_type": "NONE", "gap_top": 0.0, "gap_bottom": 0.0, "order_block_level": 0.0}
+
+    high = df["High"].values
+    low = df["Low"].values
+    close = df["Close"].values
+    open_ = df["Open"].values if "Open" in df.columns else close
+
+    curr_p = float(close[-1])
+    
+    # Check last 3 bars for FVG
+    bullish_fvg = (low[-1] > high[-3]) and (close[-2] > open_[-2])
+    bearish_fvg = (high[-1] < low[-3]) and (close[-2] < open_[-2])
+
+    if bullish_fvg:
+        gap_top = round(float(low[-1]), 2)
+        gap_bottom = round(float(high[-3]), 2)
+        ob_level = round(float(open_[-2]), 2)
+        return {
+            "has_fvg": True,
+            "fvg_type": "BULLISH_DISPLACEMENT_GAP",
+            "gap_top": gap_top,
+            "gap_bottom": gap_bottom,
+            "order_block_level": ob_level,
+            "description": f"Bullish Fair Value Gap at ₹{gap_bottom:.2f} – ₹{gap_top:.2f} (Institutional Liquidity Floor)."
+        }
+    elif bearish_fvg:
+        gap_top = round(float(low[-3]), 2)
+        gap_bottom = round(float(high[-1]), 2)
+        ob_level = round(float(open_[-2]), 2)
+        return {
+            "has_fvg": True,
+            "fvg_type": "BEARISH_DISPLACEMENT_GAP",
+            "gap_top": gap_top,
+            "gap_bottom": gap_bottom,
+            "order_block_level": ob_level,
+            "description": f"Bearish Fair Value Gap at ₹{gap_bottom:.2f} – ₹{gap_top:.2f} (Institutional Supply Ceiling)."
+        }
+
+    return {"has_fvg": False, "fvg_type": "NONE", "gap_top": 0.0, "gap_bottom": 0.0, "order_block_level": 0.0}
+
+
+def calculate_chandelier_exit(
+    high: pd.Series,
+    low: pd.Series,
+    close: pd.Series,
+    period: int = 14,
+    multiplier: float = 1.8
+) -> Tuple[pd.Series, pd.Series]:
+    """
+    Calculates Chandelier Exit trailing stop lines for long and short positions:
+    - Long Chandelier Trail = Highest High(period) - (multiplier * ATR(period))
+    - Short Chandelier Trail = Lowest Low(period) + (multiplier * ATR(period))
+    """
+    atr = calculate_atr(high, low, close, period=period)
+    highest_high = high.rolling(window=period, min_periods=1).max()
+    lowest_low = low.rolling(window=period, min_periods=1).min()
+
+    long_trail = highest_high - (multiplier * atr)
+    short_trail = lowest_low + (multiplier * atr)
+
+    return long_trail, short_trail
+
+
+def calculate_trailing_ratchet_levels(
+    entry_price: float,
+    highest_price: float,
+    current_price: float,
+    atr_val: float,
+    initial_risk_r: float,
+    side: str = "BUY",
+    target_1_hit: bool = False,
+    current_trailing_sl: float = 0.0
+) -> Dict[str, Any]:
+    """
+    Evaluates the exact 4-stage ratchet stop-loss level for open positions:
+    - Stage 1 (< +1.0R): Original protective Stop-Loss.
+    - Stage 2 (>= +1.0R, before T1): Breakeven Stop-Loss (Entry + 0.20% buffer).
+    - Stage 3 (T1 Hit, +1.5R to +3.0R): Adaptive Chandelier Trail (Highest Price - 1.5 * ATR), min floor +0.75R.
+    - Stage 4 (Parabolic Runner > +3.0R): Tight Parabolic Trail (Highest Price - 1.0 * ATR).
+    """
+    if entry_price <= 0:
+        return {"stage": "INITIAL", "new_sl": 0.0, "locked_r": 0.0, "r_multiple_gain": 0.0, "is_ratcheted": False}
+
+    is_long = side.upper() in ["BUY", "LONG"]
+    gain = (highest_price - entry_price) if is_long else (entry_price - highest_price)
+    r_mult = gain / initial_risk_r if initial_risk_r > 0 else 0.0
+
+    # Default baseline
+    stage = "INITIAL"
+    base_sl = entry_price - initial_risk_r if is_long else entry_price + initial_risk_r
+    new_sl = base_sl
+
+    if is_long:
+        if r_mult >= 3.0 and target_1_hit:
+            stage = "PARABOLIC_RIDER"
+            atr_buffer = 1.0 * atr_val if atr_val > 0 else (0.015 * highest_price)
+            trail_calc = highest_price - atr_buffer
+            locked_floor = entry_price + (1.5 * initial_risk_r)
+            new_sl = max(locked_floor, trail_calc)
+
+        elif target_1_hit:
+            stage = "T1_BOOKED_RUNNER_TRAILING"
+            atr_buffer = 1.5 * atr_val if atr_val > 0 else (0.025 * highest_price)
+            trail_calc = highest_price - atr_buffer
+            locked_floor = entry_price + (0.75 * initial_risk_r)
+            new_sl = max(locked_floor, trail_calc)
+
+        elif r_mult >= 1.0:
+            stage = "BREAKEVEN_LOCKED"
+            breakeven_sl = round(entry_price * 1.002, 2)
+            new_sl = max(base_sl, breakeven_sl)
+
+        # Ratchet condition: Trailing SL can only move UP, never down
+        if current_trailing_sl > 0:
+            new_sl = max(current_trailing_sl, new_sl)
+
+        locked_r = round((new_sl - entry_price) / initial_risk_r, 2) if initial_risk_r > 0 else 0.0
+        is_ratcheted = new_sl > current_trailing_sl if current_trailing_sl > 0 else True
+
+    else:
+        if r_mult >= 3.0 and target_1_hit:
+            stage = "PARABOLIC_RIDER"
+            atr_buffer = 1.0 * atr_val if atr_val > 0 else (0.015 * highest_price)
+            trail_calc = highest_price + atr_buffer
+            locked_floor = entry_price - (1.5 * initial_risk_r)
+            new_sl = min(locked_floor, trail_calc)
+        elif target_1_hit:
+            stage = "T1_BOOKED_RUNNER_TRAILING"
+            atr_buffer = 1.5 * atr_val if atr_val > 0 else (0.025 * highest_price)
+            trail_calc = highest_price + atr_buffer
+            locked_floor = entry_price - (0.75 * initial_risk_r)
+            new_sl = min(locked_floor, trail_calc)
+        elif r_mult >= 1.0:
+            stage = "BREAKEVEN_LOCKED"
+            breakeven_sl = round(entry_price * 0.998, 2)
+            new_sl = min(base_sl, breakeven_sl)
+
+        if current_trailing_sl > 0:
+            new_sl = min(current_trailing_sl, new_sl)
+
+        locked_r = round((entry_price - new_sl) / initial_risk_r, 2) if initial_risk_r > 0 else 0.0
+        is_ratcheted = new_sl < current_trailing_sl if current_trailing_sl > 0 else True
+
+    return {
+        "stage": stage,
+        "new_sl": round(new_sl, 2),
+        "locked_r": locked_r,
+        "r_multiple_gain": round(r_mult, 2),
+        "is_ratcheted": is_ratcheted
+    }
+
+
+
 
 

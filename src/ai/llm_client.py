@@ -160,8 +160,44 @@ class LLMClient:
         sys_p = system_prompt or "You are an expert Indian stock market trading assistant."
         return self.generate_completion(system_prompt=sys_p, user_prompt=user_prompt)
 
+    def _post_with_retry(
+        self,
+        url: str,
+        headers: dict,
+        json_payload: dict,
+        max_retries: int = 3,
+        backoff_base: float = 0.8
+    ) -> requests.Response:
+        """
+        Executes HTTP POST request with automatic exponential backoff retry
+        for transient network errors, timeouts, and 5xx/429 status codes.
+        """
+        last_exception = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                resp = requests.post(url, headers=headers, json=json_payload, timeout=self.timeout)
+                if resp.status_code == 200:
+                    return resp
+                if resp.status_code in [429, 500, 502, 503, 504] and attempt < max_retries:
+                    sleep_time = backoff_base * (2 ** (attempt - 1))
+                    time.sleep(sleep_time)
+                    continue
+                return resp
+            except (requests.Timeout, requests.ConnectionError) as e:
+                last_exception = e
+                if attempt < max_retries:
+                    sleep_time = backoff_base * (2 ** (attempt - 1))
+                    time.sleep(sleep_time)
+                else:
+                    raise last_exception
+            except Exception as e:
+                raise e
+        if last_exception:
+            raise last_exception
+        raise RuntimeError("Max retries exceeded without valid response")
+
     def _call_anthropic(self, system_prompt: str, user_prompt: str) -> str:
-        """Direct Anthropic Claude Messages API call."""
+        """Direct Anthropic Claude Messages API call with retry resilience."""
         headers = {
             "x-api-key": self.api_key,
             "anthropic-version": "2023-06-01",
@@ -176,11 +212,10 @@ class LLMClient:
             ],
             "temperature": 0.1
         }
-        resp = requests.post(
+        resp = self._post_with_retry(
             "https://api.anthropic.com/v1/messages",
             headers=headers,
-            json=payload,
-            timeout=self.timeout
+            json_payload=payload
         )
         if resp.status_code != 200:
             raise RuntimeError(f"HTTP {resp.status_code}: {resp.text}")
@@ -229,7 +264,7 @@ class LLMClient:
             except Exception as e:
                 last_error = e
                 
-            # 2. Direct HTTP Fallback
+            # 2. Direct HTTP Fallback with retry
             try:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.api_key}"
                 headers = {"Content-Type": "application/json"}
@@ -242,7 +277,7 @@ class LLMClient:
                         "temperature": 0.1
                     }
                 }
-                resp = requests.post(url, headers=headers, json=payload, timeout=self.timeout)
+                resp = self._post_with_retry(url, headers=headers, json_payload=payload, max_retries=2)
                 if resp.status_code == 200:
                     data = resp.json()
                     candidates = data.get("candidates", [])
@@ -263,7 +298,7 @@ class LLMClient:
         return ""
 
     def _call_openai_compatible(self, base_url: str, system_prompt: str, user_prompt: str) -> str:
-        """Calls OpenAI, Kimi (Moonshot), or DeepSeek via OpenAI-compatible endpoints."""
+        """Calls OpenAI, Kimi (Moonshot), or DeepSeek via OpenAI-compatible endpoints with retry."""
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -278,11 +313,10 @@ class LLMClient:
             "max_tokens": 1000,
             "response_format": {"type": "json_object"}
         }
-        resp = requests.post(
+        resp = self._post_with_retry(
             f"{base_url}/chat/completions",
             headers=headers,
-            json=payload,
-            timeout=self.timeout
+            json_payload=payload
         )
         if resp.status_code != 200:
             raise RuntimeError(f"HTTP {resp.status_code}: {resp.text}")
@@ -293,7 +327,7 @@ class LLMClient:
         return ""
 
     def _call_ollama(self, system_prompt: str, user_prompt: str) -> str:
-        """Calls local Ollama instance (default http://localhost:11434) with zero external API dependencies."""
+        """Calls local Ollama instance with zero external API dependencies and retry support."""
         ollama_url = os.getenv("OLLAMA_HOST", "http://localhost:11434")
         payload = {
             "model": self.model if self.model else "deepseek-r1:latest",
@@ -307,7 +341,7 @@ class LLMClient:
                 "temperature": 0.1
             }
         }
-        resp = requests.post(f"{ollama_url}/api/chat", json=payload, timeout=self.timeout)
+        resp = self._post_with_retry(f"{ollama_url}/api/chat", headers={}, json_payload=payload, max_retries=2)
         if resp.status_code != 200:
             raise RuntimeError(f"Ollama HTTP {resp.status_code}: {resp.text}")
         data = resp.json()

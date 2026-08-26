@@ -5,6 +5,7 @@ Coordinates data scanning, strategy signal evaluation, risk checks, and broker o
 
 from datetime import datetime
 import time
+import threading
 import config
 from src.brokers import get_broker
 from src.strategies import get_strategy
@@ -36,9 +37,36 @@ class LiveTradingBot:
         self.risk_manager = RiskManager()
         
         self.is_running = False
+        self._thread: threading.Thread = None
         self.last_scan_time = None
         self.logs = []
         self.recent_signals = []
+
+    def start_continuous(self, interval_sec: int = 60):
+        """Start continuous background trading thread."""
+        if self.is_running:
+            return
+        self.is_running = True
+        self.log(f"🟢 Background Bot Engine started. Scanning every {interval_sec}s.", level="SUCCESS")
+        self._thread = threading.Thread(target=self._continuous_loop, args=(interval_sec,), daemon=True)
+        self._thread.start()
+
+    def stop_continuous(self):
+        """Stop background trading thread."""
+        self.is_running = False
+        self.log("⏸️ Background Bot Engine stopped.", level="WARNING")
+
+    def _continuous_loop(self, interval_sec: int):
+        while self.is_running:
+            try:
+                self.scan_and_execute()
+            except Exception as e:
+                self.log(f"Continuous scan error: {e}", level="ERROR")
+            
+            for _ in range(max(1, int(interval_sec))):
+                if not self.is_running:
+                    break
+                time.sleep(1)
 
     def log(self, message: str, level: str = "INFO"):
         ist_str = get_ist_now().strftime("%H:%M:%S")

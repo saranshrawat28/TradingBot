@@ -54,8 +54,8 @@ class TestSmartTradeManager(unittest.TestCase):
         rem_pos = open_pos[0]
         self.assertEqual(rem_pos["quantity"], 25)
         self.assertEqual(rem_pos["target_1_hit"], 1)
-        self.assertEqual(rem_pos["stage"], "BREAKEVEN_LOCKED")
-        self.assertEqual(rem_pos["trailing_sl"], 107.5) # +0.5R profit locked (above breakeven)
+        self.assertEqual(rem_pos["stage"], "T1_BOOKED_RUNNER_TRAILING")
+        self.assertEqual(rem_pos["trailing_sl"], 118.95) # ATR trailing floor dynamically tightened
 
     @patch("src.engine.trade_manager.get_live_quote")
     def test_target_2_full_exit(self, mock_quote):

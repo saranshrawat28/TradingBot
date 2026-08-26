@@ -20,7 +20,7 @@ class TestAutonomousAIDaemonSuite(unittest.TestCase):
     def setUp(self):
         self.daemon = AutonomousAIDaemon.get_instance()
         self.broker = PaperBroker(initial_capital=100000.0)
-        self.guardrails = AIGuardrails(self.broker)
+        self.guardrails = AIGuardrails()
 
     def tearDown(self):
         if self.daemon.is_active:

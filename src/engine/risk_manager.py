@@ -6,6 +6,7 @@ Protects capital with dynamic position sizing, ATR stop loss, trailing stops, an
 from datetime import datetime
 import config
 from src.utils.helpers import is_intraday_squareoff_time, get_ist_now
+from src.engine.ai_guardrails import AIGuardrails
 
 class RiskManager:
     """
@@ -45,20 +46,16 @@ class RiskManager:
         if total_equity <= 0 or entry_price <= 0:
             return 0
             
-        # 1. Capital allocated per trade (e.g. max 20% of account)
-        max_capital = total_equity * (max_capital_allocation_pct / 100.0)
-        capital_based_qty = int(max_capital / entry_price)
-        
-        # 2. Risk-based sizing (if SL is specified)
-        if stop_loss_price and stop_loss_price > 0 and stop_loss_price != entry_price:
-            risk_per_share = abs(entry_price - stop_loss_price)
-            max_risk_amount = total_equity * (self.risk_per_trade_pct / 100.0)
-            risk_based_qty = int(max_risk_amount / risk_per_share)
-            quantity = min(capital_based_qty, risk_based_qty)
-        else:
-            quantity = capital_based_qty
-            
-        return max(1, quantity)
+        sl_p = stop_loss_price if (stop_loss_price and stop_loss_price > 0) else entry_price * (1.0 - (self.default_sl_pct / 100.0))
+        return AIGuardrails.calculate_dynamic_position_size(
+            capital=total_equity,
+            entry_price=entry_price,
+            sl_price=sl_p,
+            lot_size=1,
+            max_lots_cap=999999,
+            risk_pct=self.risk_per_trade_pct / 100.0,
+            max_capital_cap=max_capital_allocation_pct / 100.0
+        )
 
     def calculate_sl_tp_prices(
         self,
@@ -72,21 +69,15 @@ class RiskManager:
         Calculate dynamic Stop Loss (SL) and Take Profit (TP) levels.
         Uses ATR volatility if available, otherwise default percentage.
         """
-        if atr_value and atr_value > 0:
-            sl_distance = atr_value * atr_multiplier_sl
-            tp_distance = sl_distance * risk_reward_ratio
-        else:
-            sl_distance = entry_price * (self.default_sl_pct / 100.0)
-            tp_distance = entry_price * (self.default_tp_pct / 100.0)
-            
-        if side.upper() in ["BUY", "LONG"]:
-            sl = entry_price - sl_distance
-            tp = entry_price + tp_distance
-        else:
-            sl = entry_price + sl_distance
-            tp = entry_price - tp_distance
-            
-        return round(max(0.1, sl), 2), round(max(0.1, tp), 2)
+        return AIGuardrails.calculate_sl_tp_prices(
+            side=side,
+            entry_price=entry_price,
+            atr_value=atr_value,
+            atr_multiplier_sl=atr_multiplier_sl,
+            risk_reward_ratio=risk_reward_ratio,
+            default_sl_pct=self.default_sl_pct,
+            default_tp_pct=self.default_tp_pct
+        )
 
     def update_trailing_stop(
         self,
@@ -99,20 +90,14 @@ class RiskManager:
         """
         Calculate updated trailing stop-loss price as profit grows.
         """
-        trailing_pct = self.trailing_sl_pct / 100.0
-        
-        if side.upper() in ["BUY", "LONG"]:
-            # If price has made new high above entry
-            if highest_price > entry_price:
-                new_sl = highest_price * (1.0 - trailing_pct)
-                return round(max(current_sl or 0.0, new_sl), 2)
-        else:
-            # Short side
-            if highest_price < entry_price:
-                new_sl = highest_price * (1.0 + trailing_pct)
-                return round(min(current_sl or 999999.0, new_sl), 2)
-                
-        return current_sl
+        return AIGuardrails.update_trailing_stop(
+            side=side,
+            entry_price=entry_price,
+            current_price=current_price,
+            highest_price=highest_price,
+            current_sl=current_sl,
+            trailing_sl_pct=self.trailing_sl_pct
+        )
 
     def is_daily_circuit_breaker_triggered(self, initial_capital: float, current_equity: float) -> tuple[bool, str]:
         """Check if daily drawdown exceeded maximum allowed risk limit."""

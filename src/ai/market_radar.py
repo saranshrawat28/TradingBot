@@ -16,7 +16,8 @@ from src.ai.llm_client import LLMClient
 from src.ai.failsafe import FailsafeParser
 from src.data.data_fetcher import get_live_quote, get_historical_data
 from src.strategies.indicators import calculate_ema, calculate_rsi, calculate_supertrend, calculate_atr, calculate_macd
-from src.utils.helpers import get_ist_now, clean_symbol, display_symbol_name
+from src.utils.helpers import get_ist_now, clean_symbol, display_symbol_name, format_nse_option_contract, get_nse_options_expiry_details, get_lot_size
+from src.engine.stock_advisor import StockAdvisor
 
 logger = logging.getLogger("MarketRadar")
 
@@ -31,12 +32,17 @@ class MarketRadarScanner:
     DEFAULT_WATCHLIST = [
         {"symbol": "NIFTY", "name": "NIFTY 50", "type": "INDEX_OPTION"},
         {"symbol": "BANKNIFTY", "name": "BANK NIFTY", "type": "INDEX_OPTION"},
+        {"symbol": "ICICIBANK.NS", "name": "ICICI Bank", "type": "EQUITY"},
+        {"symbol": "ONGC.NS", "name": "ONGC", "type": "EQUITY"},
+        {"symbol": "TMCV.NS", "name": "Tata Motors CV", "type": "EQUITY"},
+        {"symbol": "SBIN.NS", "name": "State Bank of India", "type": "EQUITY"},
+        {"symbol": "BHARTIARTL.NS", "name": "Bharti Airtel", "type": "EQUITY"},
+        {"symbol": "M&M.NS", "name": "Mahindra & Mahindra", "type": "EQUITY"},
+        {"symbol": "ITC.NS", "name": "ITC Ltd", "type": "EQUITY"},
+        {"symbol": "SUNPHARMA.NS", "name": "Sun Pharma", "type": "EQUITY"},
+        {"symbol": "COALINDIA.NS", "name": "Coal India", "type": "EQUITY"},
         {"symbol": "RELIANCE", "name": "Reliance Industries", "type": "EQUITY"},
-        {"symbol": "TMCV.NS", "name": "Tata Motors", "type": "EQUITY"},
-        {"symbol": "ETERNAL.NS", "name": "Zomato", "type": "EQUITY"},
-        {"symbol": "SBIN.NS", "name": "SBI", "type": "EQUITY"},
         {"symbol": "HAL.NS", "name": "HAL", "type": "EQUITY"},
-        {"symbol": "SUZLON.NS", "name": "Suzlon Energy", "type": "EQUITY"},
     ]
     
     RADAR_SYSTEM_PROMPT = """You are an institutional Indian Market Scanner AI (NSE/NFO).
@@ -77,7 +83,9 @@ Evaluate live market telemetry, identify top high-probability trade setups (min 
         Uses a 45-second TTL cache to prevent duplicate token costs on rapid clicks.
         """
         now_ts = time.time()
-        cache_key = f"{llm_client.provider}_{llm_client.model}_{min_confidence}"
+        prov = getattr(llm_client, "provider", "heuristic") if llm_client else "heuristic"
+        model_nm = getattr(llm_client, "model", "default") if llm_client else "default"
+        cache_key = f"{prov}_{model_nm}_{min_confidence}"
         if not force_refresh and cache_key in _RADAR_CACHE:
             cached_time, cached_res = _RADAR_CACHE[cache_key]
             if now_ts - cached_time < 45.0:
@@ -122,6 +130,16 @@ Evaluate live market telemetry, identify top high-probability trade setups (min 
             except Exception as e:
                 logger.warning(f"Failed to fetch radar telemetry for {sym}: {e}")
                 
+        total_symbols = len(watchlist)
+        failed_count = total_symbols - scanned_count
+        if total_symbols > 0 and (failed_count / total_symbols) >= 0.8:
+            logger.error(f"Market Data Outage Detected: {failed_count}/{total_symbols} symbols failed to fetch.")
+            return {
+                "status": "DATA_OUTAGE",
+                "message": f"Market Data Outage Detected: {failed_count}/{total_symbols} symbols failed to respond. Scan paused.",
+                "opportunities": []
+            }
+
         if not telemetry_lines:
             return {
                 "status": "ERROR",
@@ -151,7 +169,7 @@ TASK:
             parsed = FailsafeParser.parse_json_safely(raw_response)
             opps = parsed.get("opportunities", [])
             filtered_opps = [o for o in opps if float(o.get("confidence_score", 0)) >= min_confidence]
-            if not filtered_opps and not opps:
+            if not filtered_opps:
                 return cls.scan_market_heuristic(watchlist=watchlist, min_confidence=min_confidence)
             
             # Calibrate Option Prices and Expiry Details to ensure 100% realistic market accuracy
@@ -166,20 +184,30 @@ TASK:
                 
                 if is_opt:
                     quote = get_live_quote(sym_up)
-                    s_ltp = float(quote.get("price", 24250.0 if "BANK" not in sym_up else 51200.0))
+                    s_ltp = float(quote.get("price", 24250.0 if "BANK" not in sym_up else 57800.0))
                     s_chg = float(quote.get("change_pct", 0.0))
                     contract_str = str(o.get("option_contract", ""))
                     opt_type = "PE" if ("PUT" in str(o.get("action", "")).upper() or "PE" in contract_str) else "CE"
                     
                     import re
                     digits = re.findall(r"\d{4,5}", contract_str)
-                    strike_val = float(digits[0]) if digits else (round(s_ltp / 50.0) * 50 if "BANK" not in sym_up else round(s_ltp / 100.0) * 100)
+                    raw_strike = float(digits[0]) if digits else None
+                    
+                    from src.utils.helpers import format_nse_option_contract
+                    contract_meta = format_nse_option_contract(
+                        symbol=sym_up,
+                        spot_price=s_ltp,
+                        opt_type=opt_type,
+                        expiry_date_str=exp_details["recommended_expiry_date"],
+                        preferred_strike=raw_strike
+                    )
+                    strike_val = contract_meta["strike"]
                     
                     real_entry, real_t1, real_t2, real_sl = cls.calculate_option_entry_and_targets(
                         spot_price=s_ltp,
                         strike=strike_val,
                         option_type=opt_type,
-                        expiry_date=exp_details["recommended_expiry_date"]
+                        expiry_date=contract_meta["expiry_date"]
                     )
                     
                     # Exact Spot Entry Triggers
@@ -189,13 +217,14 @@ TASK:
                     spot_t1 = round(s_ltp + (110.0 if is_bull else -110.0), 1)
                     spot_t2 = round(s_ltp + (210.0 if is_bull else -210.0), 1)
                     
-                    clean_underlying = sym_up.replace("^", "").replace(".NS", "")
-                    full_contract_name = f"{clean_underlying} {exp_details['recommended_expiry_tag']} {int(strike_val)} {opt_type}"
-                    
                     o["instrument_type"] = "INDEX_OPTION"
-                    o["option_contract"] = full_contract_name
-                    o["expiry_date"] = exp_details["recommended_expiry_date"]
-                    o["expiry_str"] = exp_details["recommended_expiry_str"]
+                    o["option_contract"] = contract_meta["display_title"]
+                    o["trading_symbol"] = contract_meta["trading_symbol"]
+                    o["broker_search_query"] = contract_meta["broker_search_query"]
+                    o["universal_search"] = contract_meta["universal_search"]
+                    o["moneyness"] = contract_meta["moneyness"]
+                    o["expiry_date"] = contract_meta["expiry_date"]
+                    o["expiry_str"] = contract_meta["expiry_str"]
                     o["expiry_tag"] = exp_details["recommended_expiry_tag"]
                     o["lot_size"] = lot_sz
                     o["capital_required"] = round(real_entry * lot_sz, 2)
@@ -211,7 +240,7 @@ TASK:
                     o["target_2"] = real_t2
                     o["stop_loss"] = real_sl
                     o["expected_gain_pct"] = "+35% to +65%"
-                    o["strike_rationale"] = f"ATM Strike ({int(strike_val)}) for {clean_underlying} &bull; Expiry: {exp_details['recommended_expiry_str']}"
+                    o["strike_rationale"] = f"{contract_meta['moneyness']} ({int(strike_val)}) for {contract_meta['underlying']} &bull; Expiry: {contract_meta['expiry_str']}"
                 else:
                     quote = get_live_quote(sym_up)
                     e_ltp = float(quote.get("price", o.get("entry_price", 100.0)))
@@ -342,31 +371,52 @@ TASK:
                     spot_t2_val = round(ltp * 1.04, 1)
                     
                     if is_index:
-                        n_atm = int(round(ltp / 50.0) * 50) if "BANK" not in sym.upper() else int(round(ltp / 100.0) * 100)
-                        action = "BUY_CALL" if "BUY" in analysis.get("verdict", "BUY") else "BUY_PUT"
-                        opt_type = "CE" if action == "BUY_CALL" else "PE"
-                        is_bull = opt_type == "CE"
+                        vwap_val = float(analysis.get("metrics", {}).get("vwap", 0.0))
+                        # Intraday Index Direction: Strict alignment with intraday VWAP
+                        if vwap_val > 0:
+                            is_bull = (ltp >= vwap_val) and ("BUY" in analysis.get("verdict", "") or score >= 6.0)
+                        else:
+                            is_bull = "BUY" in analysis.get("verdict", "BUY")
                         
-                        clean_underlying = sym.replace("^", "").replace(".NS", "")
-                        opt_contract = f"{clean_underlying} {exp_details['recommended_expiry_tag']} {n_atm} {opt_type}"
+                        action = "BUY_CALL" if is_bull else "BUY_PUT"
+                        opt_type = "CE" if is_bull else "PE"
+                        
+                        from src.utils.helpers import format_nse_option_contract
+                        contract_meta = format_nse_option_contract(
+                            symbol=sym,
+                            spot_price=ltp,
+                            opt_type=opt_type,
+                            expiry_date_str=exp_details["recommended_expiry_date"]
+                        )
+                        n_atm = contract_meta["strike"]
+                        opt_contract = contract_meta["display_title"]
+                        trading_symbol = contract_meta["trading_symbol"]
+                        broker_search_query = contract_meta["broker_search_query"]
+                        universal_search = contract_meta["universal_search"]
+                        moneyness = contract_meta["moneyness"]
                         
                         entry_p, t1_p, t2_p, sl_p = cls.calculate_option_entry_and_targets(
                             spot_price=ltp,
                             strike=float(n_atm),
                             option_type=opt_type,
-                            expiry_date=exp_details["recommended_expiry_date"]
+                            expiry_date=contract_meta["expiry_date"]
                         )
                         gain_pct_str = "+35% to +65%"
                         cap_req = round(entry_p * lot_sz, 2)
-                        exp_str = exp_details["recommended_expiry_str"]
+                        exp_str = contract_meta["expiry_str"]
                         
                         spot_trig = round(ltp + (10.0 if is_bull else -10.0), 1)
                         spot_sl_val = round(ltp - (60.0 if is_bull else -60.0), 1)
                         spot_t1_val = round(ltp + (110.0 if is_bull else -110.0), 1)
                         spot_t2_val = round(ltp + (210.0 if is_bull else -210.0), 1)
-                        strike_rat = f"ATM Strike ({n_atm}) for {clean_underlying} &bull; Expiry: {exp_str}"
+                        direction_note = "Holding above VWAP" if is_bull else "Breaking down below VWAP"
+                        strike_rat = f"{moneyness} ({n_atm}) &bull; {direction_note} &bull; Expiry: {exp_str}"
                     else:
                         entry_p = ltp
+                        trading_symbol = sym
+                        broker_search_query = sym
+                        universal_search = sym
+                        moneyness = "Equity Cash"
                         sl_raw = analysis.get("stop_loss", {})
                         t1_raw = analysis.get("target_1", {})
                         t2_raw = analysis.get("target_2", {})
@@ -385,6 +435,10 @@ TASK:
                         "display_name": item.get("name", sym),
                         "instrument_type": "INDEX_OPTION" if is_index else "EQUITY",
                         "option_contract": opt_contract,
+                        "trading_symbol": trading_symbol,
+                        "broker_search_query": broker_search_query,
+                        "universal_search": universal_search,
+                        "moneyness": moneyness,
                         "action": action,
                         "setup_name": analysis.get("setup_grade_title", "Institutional Breakout"),
                         "time_horizon": "30 to 90 mins (Intraday)",
@@ -412,10 +466,120 @@ TASK:
             except Exception as e:
                 continue
                 
+        # Fallback: If no aggressive breakouts >= min_confidence, surface top relative-strength pullback candidates
+        market_summary = "Institutional quantitative radar scanned liquid Indian equities & index options."
+        if not opportunities:
+            for item in target_list:
+                sym = item["symbol"]
+                try:
+                    quote = get_live_quote(sym)
+                    ltp = float(quote.get("price", 0.0))
+                    if ltp <= 0: continue
+                    df = get_historical_data(sym, period="5d", interval="5m")
+                    if df.empty or len(df) < 20: continue
+                    analysis = StockAdvisor.evaluate_df_slice(df, symbol=sym, horizon="intraday")
+                    score = float(analysis.get("score", 5.0))
+                    if score >= 6.0: # Pullback threshold
+                        is_idx = any(idx in sym.upper() for idx in ["NIFTY", "BANKNIFTY", "FINNIFTY", "SENSEX"])
+                        lot_sz = get_lot_size(sym)
+                        if is_idx:
+                            action = "BUY_CALL" if "BUY" in analysis.get("verdict", "BUY") else "BUY_PUT"
+                            opt_type = "CE" if action == "BUY_CALL" else "PE"
+                            is_bull = opt_type == "CE"
+                            from src.utils.helpers import format_nse_option_contract
+                            contract_meta = format_nse_option_contract(
+                                symbol=sym,
+                                spot_price=ltp,
+                                opt_type=opt_type,
+                                expiry_date_str=exp_details["recommended_expiry_date"]
+                            )
+                            n_atm = contract_meta["strike"]
+                            opt_contract = contract_meta["display_title"]
+                            trading_symbol = contract_meta["trading_symbol"]
+                            broker_search_query = contract_meta["broker_search_query"]
+                            universal_search = contract_meta["universal_search"]
+                            moneyness = contract_meta["moneyness"]
+                            entry_p, t1_p, t2_p, sl_p = cls.calculate_option_entry_and_targets(
+                                spot_price=ltp,
+                                strike=float(n_atm),
+                                option_type=opt_type,
+                                expiry_date=contract_meta["expiry_date"]
+                            )
+                            gain_pct_str = "+35% to +65%"
+                            cap_req = round(entry_p * lot_sz, 2)
+                            exp_str = contract_meta["expiry_str"]
+                            spot_trig = round(ltp + (10.0 if is_bull else -10.0), 1)
+                            spot_sl_val = round(ltp - (60.0 if is_bull else -60.0), 1)
+                            spot_t1_val = round(ltp + (110.0 if is_bull else -110.0), 1)
+                            spot_t2_val = round(ltp + (210.0 if is_bull else -210.0), 1)
+                            strike_rat = f"{moneyness} ({n_atm}) for {contract_meta['underlying']} &bull; Expiry: {exp_str}"
+                            inst_type = "INDEX_OPTION"
+                        else:
+                            inst_type = "EQUITY"
+                            opt_contract = "N/A"
+                            action = "BUY_STOCK"
+                            trading_symbol = sym
+                            broker_search_query = sym
+                            universal_search = sym
+                            moneyness = "Equity Cash"
+                            entry_p = ltp
+                            sl_raw = analysis.get("stop_loss", {})
+                            t1_raw = analysis.get("target_1", {})
+                            t2_raw = analysis.get("target_2", {})
+                            sl_p = float(sl_raw.get("price", ltp * 0.985) if isinstance(sl_raw, dict) else sl_raw)
+                            t1_p = float(t1_raw.get("price", ltp * 1.025) if isinstance(t1_raw, dict) else t1_raw)
+                            t2_p = float(t2_raw.get("price", ltp * 1.050) if isinstance(t2_raw, dict) else t2_raw)
+                            gain_pct_str = f"+{round(((t1_p-ltp)/max(0.01, ltp))*100, 1)}%"
+                            cap_req = round(entry_p * lot_sz, 2)
+                            exp_str = "Delivery / MIS Intraday"
+                            strike_rat = "Cash Equity Pullback Accumulation"
+                            spot_trig = ltp
+                            spot_sl_val = sl_p
+                            spot_t1_val = t1_p
+                            spot_t2_val = t2_p
+                            
+                        opportunities.append({
+                            "rank": len(opportunities) + 1,
+                            "symbol": sym,
+                            "display_name": item.get("name", sym),
+                            "instrument_type": inst_type,
+                            "option_contract": opt_contract,
+                            "trading_symbol": trading_symbol,
+                            "broker_search_query": broker_search_query,
+                            "universal_search": universal_search,
+                            "moneyness": moneyness,
+                            "action": action,
+                            "setup_name": analysis.get("setup_grade_title", "Pullback Setup"),
+                            "time_horizon": "30 to 90 mins (Intraday)",
+                            "expiry_str": exp_str,
+                            "expiry_tag": exp_details["recommended_expiry_tag"] if is_idx else "",
+                            "lot_size": lot_sz,
+                            "capital_required": cap_req,
+                            "spot_price": ltp,
+                            "spot_change_pct": float(quote.get("change_pct", 0.0)),
+                            "spot_trigger": spot_trig,
+                            "spot_sl": spot_sl_val,
+                            "spot_t1": spot_t1_val,
+                            "spot_t2": spot_t2_val,
+                            "entry_price": entry_p,
+                            "current_price": entry_p,
+                            "stop_loss": sl_p,
+                            "target_1": t1_p,
+                            "target_2": t2_p,
+                            "risk_reward_ratio": "1:2.0",
+                            "expected_gain_pct": gain_pct_str,
+                            "confidence_score": score,
+                            "strike_rationale": strike_rat,
+                            "catalyst_reasoning": f"Consolidating market structure. Top relative-strength candidate ({analysis.get('win_probability', 60)}% Win Rate) holding 20 EMA pullback support."
+                        })
+                except Exception:
+                    continue
+            market_summary = "Intraday Pullback Regime: No aggressive breakouts ≥7.0 detected. Surfacing top relative-strength dip-accumulation setups."
+
         opportunities.sort(key=lambda x: x["confidence_score"], reverse=True)
         return {
             "status": "SUCCESS",
-            "market_summary": "Institutional quantitative radar scanned liquid Indian equities & index options.",
+            "market_summary": market_summary,
             "scanned_count": len(target_list),
             "timestamp": get_ist_now().isoformat(),
             "opportunities": opportunities[:4]

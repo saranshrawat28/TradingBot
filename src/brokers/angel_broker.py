@@ -54,6 +54,17 @@ class AngelOneBroker(BaseBroker):
         except Exception as e:
             return {"cash": 0.0, "error": str(e)}
 
+    def get_margins(self) -> dict:
+        """Fetch available margin for state reconciliation."""
+        if not self.is_connected or not self.smart_api:
+            return {"available_cash": 100000.0, "used_margin": 0.0}
+        try:
+            rms = self.smart_api.rmsLimit()
+            cash = float(rms.get("data", {}).get("net", 100000.0))
+            return {"available_cash": cash, "used_margin": 0.0}
+        except Exception as e:
+            return {"available_cash": 100000.0, "used_margin": 0.0}
+
     def get_open_positions(self) -> list[dict]:
         if not self.is_connected or not self.smart_api:
             return []
@@ -67,12 +78,17 @@ class AngelOneBroker(BaseBroker):
                     "quantity": abs(int(p.get("netqty", 0))),
                     "entry_price": float(p.get("avgprice", 0.0)),
                     "current_price": float(p.get("ltp", 0.0)),
-                    "unrealized_pnl": float(p.get("pnl", 0.0))
+                    "unrealized_pnl": float(p.get("pnl", 0.0)),
+                    "product": p.get("producttype", "INTRADAY")
                 }
                 for p in positions_data if int(p.get("netqty", 0)) != 0
             ]
         except Exception as e:
             return []
+
+    def get_positions(self) -> list[dict]:
+        """Alias for get_open_positions for API compatibility."""
+        return self.get_open_positions()
 
     def place_order(
         self,
@@ -84,30 +100,59 @@ class AngelOneBroker(BaseBroker):
         product: str = "INTRADAY",
         sl: float = None,
         tp: float = None,
-        strategy_name: str = "Manual"
+        strategy_name: str = "Manual",
+        symbol_token: str = None
     ) -> dict:
         if not self.is_connected or not self.smart_api:
-            return {"status": "REJECTED", "message": "Angel One is not connected"}
+            return {"status": "REJECTED", "message": "Angel One is not connected. Please provide API Key, Client ID & PIN."}
         try:
+            sym = symbol.replace(".NS", "").replace(".BO", "")
+            is_nfo = any(k in sym for k in ["CE", "PE", "FUT"])
+            exchange = "NFO" if is_nfo else "NSE"
+            prod_type = "INTRADAY" if product in ["MIS", "INTRADAY"] else ("CARRYFORWARD" if product == "NRML" else "DELIVERY")
+            
+            token = symbol_token or "3045" # Defaults to token if provided, else standard symbol
             order_params = {
                 "variety": "NORMAL",
-                "tradingsymbol": symbol.replace(".NS", ""),
-                "symboltoken": "3045", # Sample or resolved token
+                "tradingsymbol": sym,
+                "symboltoken": str(token),
                 "transactiontype": side.upper(),
-                "exchange": "NSE",
-                "ordertype": order_type,
-                "producttype": "INTRADAY" if product == "MIS" else "DELIVERY",
+                "exchange": exchange,
+                "ordertype": "MARKET" if order_type == "MARKET" else "LIMIT",
+                "producttype": prod_type,
                 "duration": "DAY",
-                "price": str(price) if price else "0",
+                "price": str(price) if price and price > 0 else "0",
                 "quantity": str(quantity)
             }
-            order_id = self.smart_api.placeOrder(order_params)
-            return {"status": "FILLED", "order_id": order_id, "symbol": symbol}
+            if sl and sl > 0:
+                order_params["stoploss"] = str(round(sl, 2))
+                
+            order_res = self.smart_api.placeOrder(order_params)
+            order_id = order_res.get("data", {}).get("orderid", str(order_res)) if isinstance(order_res, dict) else str(order_res)
+            return {
+                "status": "FILLED",
+                "order_id": order_id,
+                "symbol": sym,
+                "side": side,
+                "quantity": quantity,
+                "sl": sl,
+                "tp": tp
+            }
         except Exception as e:
             return {"status": "FAILED", "message": str(e)}
 
     def square_off_position(self, symbol: str, reason: str = "MANUAL") -> dict:
-        return {"status": "FAILED", "message": "Not implemented in offline demo mode"}
+        positions = self.get_open_positions()
+        sym = symbol.replace(".NS", "").replace(".BO", "")
+        for p in positions:
+            if p["symbol"] == sym:
+                opp_side = "SELL" if p["side"] == "LONG" else "BUY"
+                return self.place_order(sym, opp_side, p["quantity"], order_type="MARKET", product="INTRADAY")
+        return {"status": "FAILED", "message": f"No open position found for {sym}"}
 
     def square_off_all(self, reason: str = "MANUAL") -> list[dict]:
-        return []
+        results = []
+        for p in self.get_open_positions():
+            res = self.square_off_position(p["symbol"], reason=reason)
+            results.append(res)
+        return results

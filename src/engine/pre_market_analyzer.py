@@ -255,7 +255,8 @@ class PreMarketAnalyzer:
 
         # Market sentiment
         opening_info = cls.get_market_opening_sentiment()
-        index_trend = "BULLISH" if "BULLISH" in opening_info["sentiment"] else ("BEARISH" if "BEARISH" in opening_info["sentiment"] else "NEUTRAL")
+        sent_val = str(opening_info.get("sentiment") or opening_info.get("title") or "NEUTRAL").upper()
+        index_trend = "BULLISH" if "BULLISH" in sent_val else ("BEARISH" if "BEARISH" in sent_val else "NEUTRAL")
 
         for sym in symbols:
             try:
@@ -407,3 +408,30 @@ class PreMarketAnalyzer:
             "scanned_count": len(scanned_items),
             "generated_at": get_ist_now().strftime("%I:%M:%S %p IST")
         }
+
+    @classmethod
+    def get_pre_market_report(cls, universe: Optional[List[str]] = None, top_n: int = 6) -> Dict[str, Any]:
+        """Convenience wrapper for scan_pre_market_stocks providing formatted report data."""
+        data = cls.scan_pre_market_stocks(universe=universe, top_n=top_n)
+        op_sent = data.get("opening_sentiment", {})
+        return {
+            "market_sentiment": op_sent,
+            "opening_sentiment": op_sent,
+            "overall_sentiment": op_sent.get("title", op_sent.get("sentiment", "NEUTRAL")),
+            "nifty_quote": {
+                "price": float(op_sent.get("nifty_price", 24500.0)),
+                "change_pct": float(op_sent.get("gap_pct", 0.0))
+            },
+            "recommendations": data.get("top_picks", []),
+            "top_picks": data.get("top_picks", []),
+            "option_calls": data.get("option_calls", []),
+            "swing_picks": data.get("swing_picks", []),
+            "gap_ups": data.get("top_gap_ups", []),
+            "gap_downs": data.get("top_gap_downs", []),
+            "top_gap_ups": data.get("top_gap_ups", []),
+            "top_gap_downs": data.get("top_gap_downs", []),
+            "all_scanned": data.get("all_scanned", []),
+            "scanned_count": data.get("scanned_count", 0),
+            "generated_at": data.get("generated_at", "")
+        }
+

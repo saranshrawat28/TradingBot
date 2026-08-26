@@ -8,8 +8,8 @@ Implements:
 
 import pandas as pd
 import numpy as np
-from typing import Dict, Any, Tuple
-from src.data.data_fetcher import get_historical_data, get_live_quote
+from typing import Dict, Any, Tuple, Optional
+from src.data.data_fetcher import get_historical_data, get_live_quote, get_live_index_trend, get_sector_for_symbol
 from src.strategies.indicators import (
     calculate_ema, calculate_rsi, calculate_macd,
     calculate_bollinger_bands, calculate_atr, calculate_supertrend,
@@ -18,8 +18,11 @@ from src.strategies.indicators import (
     calculate_intraday_vwap_bands, calculate_rvol, calculate_context_multiplier,
     calculate_obv, calculate_classical_pivots, calculate_fibonacci_pivots,
     evaluate_vwap_location_score, evaluate_pivot_confluence,
-    calculate_relative_strength_vs_benchmark, calculate_ttm_squeeze, calculate_vsa_structure
+    calculate_relative_strength_vs_benchmark, calculate_ttm_squeeze, calculate_vsa_structure,
+    calculate_camarilla_pivots, calculate_volume_profile, calculate_anchored_vwap,
+    calculate_hurst_exponent, calculate_order_block_fvg
 )
+from src.strategies.options_greeks import DerivativesFlowAnalyzer
 from src.utils.helpers import clean_symbol, display_symbol_name, format_currency_inr
 
 class StockAdvisor:
@@ -28,12 +31,21 @@ class StockAdvisor:
     """
 
     @classmethod
-    def evaluate_df_slice(cls, df: pd.DataFrame, symbol: str = "ASSET", horizon: str = "intraday", index_trend: str = "BULLISH") -> Dict[str, Any]:
+    def evaluate_df_slice(
+        cls,
+        df: pd.DataFrame,
+        symbol: str = "ASSET",
+        horizon: str = "intraday",
+        index_trend: str = "BULLISH",
+        htf_trend: str = "NEUTRAL",
+        sector_name: str = "",
+        deriv_info: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         Evaluates a slice of historical candles (strictly closed bars) using
         orthogonal category capping, single combined context multiplier (ADX + Macro Breadth),
         symmetric MTF trend multipliers, divergence asymmetric gates, 4-zone VWAP sigma-location,
-        symmetric 4-case pivot confluence, and pure RVol flow.
+        symmetric 4-case pivot confluence, pure RVol flow, Volume Profile POC, and Camarilla Equations.
         """
         if df.empty or len(df) < 25:
             return {"status": "ERROR", "score": 5.0, "message": "Insufficient data"}
@@ -41,7 +53,7 @@ class StockAdvisor:
         close = df["Close"]
         high = df["High"]
         low = df["Low"]
-        volume = df["Volume"]
+        volume = df["Volume"] if "Volume" in df.columns else pd.Series(1, index=df.index)
         open_ = df["Open"] if "Open" in df.columns else close
 
         curr_p = float(close.iloc[-1])
@@ -53,6 +65,10 @@ class StockAdvisor:
         prev_c = float(close.iloc[-2]) if len(close) > 1 else float(close.iloc[-1])
         pivots = calculate_classical_pivots(prev_h, prev_l, prev_c)
         fib_pivots = calculate_fibonacci_pivots(prev_h, prev_l, prev_c)
+        cam_pivots = calculate_camarilla_pivots(prev_h, prev_l, prev_c)
+        vp_info = calculate_volume_profile(df, bins=25)
+        hurst_h = calculate_hurst_exponent(close)
+        fvg_info = calculate_order_block_fvg(df)
 
         # Baseline Vectorized Indicators
         ema9 = float(calculate_ema(close, 9).iloc[-1])
@@ -127,6 +143,15 @@ class StockAdvisor:
             
         # Apply combined context multiplier AND symmetric MTF factor to trend score
         mu_mtf = mtf_info.get("mu_mtf", 1.00)
+        
+        # Dual-Timeframe Daily HTF Anchor
+        if htf_trend == "BEARISH" and raw_trend_sum > 0:
+            raw_trend_sum *= 0.65
+            watchouts.append("⚠️ **HTF Daily Headwind:** Daily chart in downtrend below 50 EMA. Long setups are counter-trend.")
+        elif htf_trend == "BULLISH" and raw_trend_sum > 0:
+            raw_trend_sum *= 1.10
+            pros.append("📈 **Daily Macro Alignment:** Aligned with higher-timeframe Daily bullish trend.")
+
         trend_pts = raw_trend_sum * mu_context * mu_mtf
 
         if mtf_info.get("status") == "BULLISH_ALIGNED" and raw_trend_sum > 0:
@@ -221,14 +246,18 @@ class StockAdvisor:
                 pros.append(f"🟢 **Optimal VWAP Location:** Value/Discount support zone (VWAP: ₹{vwap_bands['vwap']:.2f}).")
             elif vwap_loc_score <= -0.80:
                 watchouts.append(f"⚠️ **VWAP Location Penalty:** Overextended/Climax zone (VWAP: ₹{vwap_bands['vwap']:.2f}).")
-        else:
-            # Swing / Positional: Use distance from 21 EMA
-            ema_dist_pct = abs(curr_p - ema21) / curr_p
-            if ema_dist_pct <= 0.02 and curr_p >= ema21:
-                vol_loc_pts += 0.75
-                pros.append(f"🟢 **21 EMA Pullback Support:** Holding tight within 2% of key moving average (₹{ema21:.2f}).")
 
-        # 2. Symmetric 4-Case Pivot Confluence
+        # 2. Universal Distance from 21 EMA (in ATR units) — Penalize Overextension & Reward Pullbacks
+        dist_from_ema21 = (curr_p - ema21)
+        dist_in_atr = dist_from_ema21 / max(0.01, atr_val)
+        if dist_in_atr > 1.8 and raw_trend_sum > 0:
+            vol_loc_pts -= 0.85
+            watchouts.append(f"⚠️ **Overextension Penalty:** Price is {dist_in_atr:.1f} ATRs extended above 21 EMA. High risk of mean-reversion pullback.")
+        elif 0.0 <= dist_in_atr <= 0.8 and curr_p >= ema21 and raw_trend_sum > 0:
+            vol_loc_pts += 0.75
+            pros.append(f"🟢 **21 EMA Pullback Support:** Price holding key 21 EMA support within {dist_in_atr:.1f} ATRs with tight risk.")
+
+        # 3. Symmetric 4-Case Pivot Confluence & Camarilla Levels
         piv_conf = evaluate_pivot_confluence(curr_p, pivots, raw_trend=raw_trend_sum)
         vol_loc_pts += piv_conf
         if piv_conf > 0:
@@ -236,7 +265,36 @@ class StockAdvisor:
         elif piv_conf < 0:
             watchouts.append(f"⚠️ **Pivot Resistance Obstacle:** Approaching major overhead supply (R1: ₹{pivots['r1']:.2f}).")
 
-        # 3. Upper Wick Rejection Penalty (VSA Trap Filter)
+        # 4. Institutional Camarilla Equations (Early H4 Breakout vs Climax Past H4)
+        if cam_pivots.get("h4", 0) > 0:
+            dist_to_h4_pct = (curr_p - cam_pivots["h4"]) / cam_pivots["h4"]
+            if 0.0 <= dist_to_h4_pct <= 0.005:
+                vol_loc_pts += 0.35
+                pros.append(f"🚀 **Camarilla H4 Breakout:** Price breaking above institutional trigger (H4: ₹{cam_pivots['h4']:.2f}).")
+            elif dist_to_h4_pct > 0.015:
+                vol_loc_pts -= 0.40
+                watchouts.append(f"⚠️ **Extended Above H4:** Price +{dist_to_h4_pct*100:.1f}% past Camarilla H4. Avoid chasing extended breakout.")
+            elif curr_p <= cam_pivots.get("l4", 0):
+                vol_loc_pts -= 0.35
+                watchouts.append(f"🔴 **Camarilla L4 Breakdown:** Price breached institutional floor (L4: ₹{cam_pivots['l4']:.2f}).")
+            elif abs(curr_p - cam_pivots.get("l3", 0)) / curr_p <= 0.003:
+                vol_loc_pts += 0.25
+                pros.append(f"⚡ **Camarilla L3 Demand Floor:** Holding institutional mean-reversion buy zone (L3: ₹{cam_pivots['l3']:.2f}).")
+        elif abs(curr_p - cam_pivots["h3"]) / curr_p <= 0.003:
+            vol_loc_pts -= 0.25
+            watchouts.append(f"⚠️ **Camarilla H3 Supply Ceiling:** Near institutional mean-reversion resistance (H3: ₹{cam_pivots['h3']:.2f}).")
+
+        # 4. Volume Profile Point of Control (POC) Interaction
+        if vp_info.get("poc", 0) > 0:
+            poc_p = vp_info["poc"]
+            if curr_p >= poc_p and vp_info.get("poc_distance_pct", 0) <= 1.5:
+                vol_loc_pts += 0.25
+                pros.append(f"🟢 **Volume POC Support:** Price supported by major volume node (POC: ₹{poc_p:,.2f}).")
+            elif curr_p < poc_p and vp_info.get("poc_distance_pct", 0) >= -1.5:
+                vol_loc_pts -= 0.20
+                watchouts.append(f"⚠️ **Volume POC Overhead:** Facing high-volume resistance ceiling (POC: ₹{poc_p:,.2f}).")
+
+        # 5. Upper Wick Rejection Penalty (VSA Trap Filter)
         if wick_info.get("is_upper_rejection"):
             vol_loc_pts -= 0.4
             watchouts.append(f"⚠️ **Upper Wick Supply Trap:** Trigger candle shows {wick_info['upper_wick_ratio']*100:.0f}% upper shadow (supply absorption).")
@@ -247,19 +305,19 @@ class StockAdvisor:
 
         # =========================================================================
         # BUCKET 4: VOLUME & INSTITUTIONAL FLOW (Max Capped at +1.5 / -1.5 pts)
-        # Pure Volume Metrics: RVol + OBV Flow (ZERO price/VWAP check to prevent collinearity)
+        # Pure Volume Metrics: RVol + OBV Flow + FVG + Hurst Persistence
         # =========================================================================
         flow_pts = 0.0
         
         # 1. RVol Scoring
         if rvol_val >= 1.50:
-            flow_pts += 0.80
+            flow_pts += 0.70
             pros.append(f"🟢 **Institutional Volume Surge:** RVol at {rvol_val:.2f}x average.")
         elif rvol_val >= 1.15:
-            flow_pts += 0.40
+            flow_pts += 0.35
             pros.append(f"🟢 **Above-Average Volume:** RVol at {rvol_val:.2f}x.")
         elif rvol_val < 0.80:
-            flow_pts -= 0.40
+            flow_pts -= 0.35
             watchouts.append(f"⚠️ **Anemic Volume:** RVol at {rvol_val:.2f}x (Low institutional participation).")
 
         # 2. OBV Flow
@@ -267,10 +325,41 @@ class StockAdvisor:
         if len(obv_series) >= 10:
             obv_slope = float(obv_series.iloc[-1] - obv_series.iloc[-10])
             if obv_slope > 0:
-                flow_pts += 0.70
+                flow_pts += 0.45
                 pros.append("🟢 **Positive On-Balance Volume:** Institutional accumulation active.")
             else:
+                flow_pts -= 0.25
+
+        # 3. Smart Money Fair Value Gap (FVG)
+        if fvg_info.get("has_fvg"):
+            if fvg_info.get("fvg_type") == "BULLISH_DISPLACEMENT_GAP":
+                flow_pts += 0.30
+                pros.append(f"🟢 **Smart Money FVG:** {fvg_info.get('description')}")
+            elif fvg_info.get("fvg_type") == "BEARISH_DISPLACEMENT_GAP":
                 flow_pts -= 0.30
+                watchouts.append(f"🛑 **Smart Money Supply Gap:** {fvg_info.get('description')}")
+
+        # 4. Hurst Exponent Trend Persistence
+        if hurst_h >= 0.58:
+            flow_pts += 0.20
+            pros.append(f"📈 **High Trend Persistence:** Hurst Exponent at {hurst_h:.2f} (Strong institutional momentum).")
+        elif hurst_h <= 0.42:
+            flow_pts -= 0.20
+        # 5. Derivatives Open Interest (OI) & Smart-Money Order Flow
+        if deriv_info and deriv_info.get("status") == "SUCCESS":
+            oi_state = deriv_info.get("oi_interpretation", "NEUTRAL")
+            pcr_oi = float(deriv_info.get("pcr_oi", 1.0))
+            if oi_state == "LONG_BUILDUP":
+                flow_pts += 0.40
+                pros.append(f"⚡ **Derivatives Long Build-up:** Confirmed institutional accumulation (PCR: {pcr_oi:.2f}).")
+            elif oi_state == "PUT_WRITING_SUPPORT":
+                flow_pts += 0.20
+                pros.append(f"🟢 **Put Writer Support:** Strong demand floor defending key strikes (PCR: {pcr_oi:.2f}).")
+            elif oi_state == "SHORT_COVERING":
+                watchouts.append("⚠️ **Derivatives Short Covering:** Rebound driven by short squeeze rather than fresh buying.")
+            elif oi_state == "SHORT_BUILDUP":
+                flow_pts -= 0.40
+                watchouts.append(f"🛑 **Derivatives Bearish Overhang:** Heavy Call writing overhead (PCR: {pcr_oi:.2f}).")
 
         flow_pts = max(-1.5, min(1.5, flow_pts))
 
@@ -305,15 +394,36 @@ class StockAdvisor:
         # =========================================================================
         # REGIME-AWARE CONTINUOUS STOP-LOSS & INVARIANT BLENDED TARGETS
         # =========================================================================
+        # Minimum percentage floor based on trading horizon so targets are realistic and profitable net of fees:
+        if horizon == "intraday":
+            min_sl_pct = 0.012  # Minimum 1.2% SL floor for intraday (gives Target 1 >= +1.8%, Target 2 >= +3.0%)
+        elif horizon == "positional":
+            min_sl_pct = 0.050  # Minimum 5.0% SL floor for positional (gives Target 1 >= +7.5%, Target 2 >= +12.5%)
+        else: # swing
+            min_sl_pct = 0.025  # Minimum 2.5% SL floor for swing (gives Target 1 >= +3.75%, Target 2 >= +6.25%)
+
         # Continuous SL multiplier: 1.5x in Chop (ADX <= 20) -> 1.2x in Trend (ADX >= 25)
         sl_mult = 1.5 - (0.3 * adx_factor)
-        sl_distance = sl_mult * atr_val
+        raw_sl_dist = sl_mult * atr_val
+        sl_distance = max(curr_p * min_sl_pct, raw_sl_dist)
         sl_price = round(curr_p - sl_distance, 2)
         
         # Targets are tied directly to SL distance (1.5x SL and 2.5x SL)
         # This guarantees that Blended R:R (0.5 * 1.5R + 0.5 * 2.5R) = 2.0R across ALL regimes!
         t1_price = round(curr_p + (1.5 * sl_distance), 2)
         t2_price = round(curr_p + (2.5 * sl_distance), 2)
+
+        # Call Writer Collision Shield (Front-running institutional option sellers)
+        if deriv_info and deriv_info.get("status") == "SUCCESS":
+            call_wall = float(deriv_info.get("call_writer_wall", 0.0))
+            if call_wall > curr_p and t1_price >= call_wall:
+                front_run_t1 = round(call_wall * 0.9975, 2)
+                # Only recalibrate T1 if distance to Call Wall provides a viable return (>= min_sl_pct)
+                if (front_run_t1 - curr_p) / curr_p >= min_sl_pct:
+                    t1_price = front_run_t1
+                    pros.append(f"🛡️ **Call Wall Collision Shield:** Target 1 calibrated to ₹{t1_price:.2f} to front-run the institutional Call Writer Wall at ₹{call_wall:.2f}.")
+                else:
+                    watchouts.append(f"🧱 **Call Wall Overhead:** Institutional Call Wall at ₹{call_wall:.2f} compresses upside runway to {((call_wall-curr_p)/curr_p)*100:.1f}%.")
 
         t1_gain = round(((t1_price - curr_p) / curr_p) * 100.0, 2) if curr_p > 0 else 0.0
         t2_gain = round(((t2_price - curr_p) / curr_p) * 100.0, 2) if curr_p > 0 else 0.0
@@ -344,26 +454,88 @@ class StockAdvisor:
         elif rs_info.get("status") in ["HEAVY_UNDERPERFORMER", "UNDERPERFORMING"]:
             watchouts.append(f"⚠️ **Lagging Benchmark:** Underperforming NIFTY 50 by {rs_info.get('rs_diff_pct')}%.")
 
-        # Setup Quality Grading & Estimated Win-Rate Probability (Mapped 1:1 to Verdict Bands)
-        if final_score >= 8.5 and not vsa_info.get("is_trap") and rs_info.get("rs_ratio", 1.0) >= 1.00:
+        # =========================================================================
+        # THE 5 HARD ASYMMETRIC VETO GATES (ELIMINATES FALSE BREAKOUTS & TRAPS)
+        # =========================================================================
+        # 1. VSA Upthrust / Supply Absorption Trap Veto
+        if vsa_info.get("is_trap"):
+            final_score = min(final_score, 4.2)
+            verdict = "🔴 AVOID / TRAP DETECTED"
+            verdict_desc = f"VSA Trap Alert: {vsa_info.get('description')} (High risk of sudden rejection)."
+            action = "AVOID"
+            badge_color = "#f85149"
+
+        # 2. Call Writer Ceiling Overhead Veto (Distance to Call Wall < 1.0%)
+        elif deriv_info and deriv_info.get("status") == "SUCCESS" and deriv_info.get("call_writer_wall", 0) > curr_p and deriv_info.get("runway_to_call_wall_pct", 100.0) < 1.0 and final_score >= 6.0:
+            call_wall = float(deriv_info.get("call_writer_wall", 0.0))
+            final_score = min(final_score, 5.9)
+            verdict = "⏳ WAIT / AT CALL RESISTANCE WALL"
+            verdict_desc = f"Institutional Call Writer Wall immediately overhead at ₹{call_wall:,.2f} (<1.0% away). Rejection risk high; wait for breakout or pullback."
+            action = "WAIT"
+            badge_color = "#d29922"
+            watchouts.append(f"🧱 **Call Wall Overhead:** Multi-crore institutional Call resistance at ₹{call_wall:,.2f}. Avoid buying right beneath this wall.")
+
+        # 3. Bearish Divergence near Resistance Veto
+        elif div_info.get("bearish_divergence") and final_score >= 6.5:
+            final_score = min(final_score, 5.8)
+            verdict = "🟡 WAIT / BEARISH DIVERGENCE"
+            verdict_desc = "Price made higher highs while momentum weakened. Divergence veto active."
+            action = "WAIT"
+            badge_color = "#d29922"
+
+        # 4. Anemic Smart Money Volume Veto
+        elif rvol_val < 0.70 and final_score >= 7.2:
+            final_score = min(final_score, 6.4)
+            verdict = "⏳ BUY ON PULLBACK (LOW RVOL)"
+            verdict_desc = f"Anemic volume ({rvol_val:.2f}x). Smart money absent; avoid chasing breakouts."
+            action = "BUY ON DIP"
+            badge_color = "#2ea043"
+
+        # 5. Overextended Candle Ceiling Veto (Price > 1.8 ATRs above 21 EMA or > 2.0% above 21 EMA)
+        dist_from_ema21 = (curr_p - ema21)
+        dist_in_atr = dist_from_ema21 / max(0.01, atr_val)
+        if (dist_in_atr > 1.8 or (curr_p - ema21) / curr_p > 0.020) and final_score >= 6.8:
+            final_score = min(final_score, 6.2)  # CLAMP SCORE: Stop overextended setups from qualifying as Grade A/A+
+            verdict = "⏳ BUY ON PULLBACK (EXTENDED)"
+            verdict_desc = f"Price extended {dist_in_atr:.1f} ATRs (+{((curr_p-ema21)/curr_p)*100:.1f}%) above 21 EMA. Enter on pullback to 21 EMA floor."
+            action = "BUY ON DIP"
+            badge_color = "#2ea043"
+            entry_zone_str = f"₹{ema21 * 0.998:.2f} – ₹{ema21 * 1.006:.2f}"
+            watchouts.append(f"⚠️ **Overextension Warning:** Price is {dist_in_atr:.1f} ATRs extended. Chasing here has poor risk-reward.")
+
+        # Institutional Grade Classification (Expectancy & 1:2 R:R Focus)
+        has_clear_runway = deriv_info.get("has_clear_runway", True) if deriv_info else True
+        deriv_oi = deriv_info.get("oi_interpretation", "NEUTRAL") if deriv_info else "NEUTRAL"
+        is_deriv_bullish = deriv_oi in ["LONG_BUILDUP", "PUT_WRITING_SUPPORT", "NEUTRAL_BALANCED"]
+
+        if (
+            final_score >= 7.8
+            and not vsa_info.get("is_trap")
+            and rs_info.get("rs_ratio", 1.0) >= 1.00
+            and index_trend in ["BULLISH", "NEUTRAL"]
+            and htf_trend in ["BULLISH", "NEUTRAL"]
+            and is_deriv_bullish
+            and has_clear_runway
+            and dist_in_atr <= 1.5
+        ):
             setup_grade = "GRADE_A_PLUS"
-            setup_grade_title = "🌟 GRADE A+ (Elite Institutional Setup)"
-            win_probability = 82
-        elif final_score >= 7.5 and not vsa_info.get("is_trap"):
+            setup_grade_title = "🌟 GRADE A+ (Prime Confluence Setup — Target 1:2 R:R)"
+            win_probability = 65
+        elif final_score >= 7.0 and not vsa_info.get("is_trap") and dist_in_atr <= 1.8:
             setup_grade = "GRADE_A"
-            setup_grade_title = "⚡ GRADE A (High Probability Breakout)"
-            win_probability = 72
-        elif final_score >= 6.2:
-            setup_grade = "GRADE_B"
-            setup_grade_title = "⏳ GRADE B (Pullback / Accumulation)"
+            setup_grade_title = "⚡ GRADE A (High Probability Momentum — Min 1:1.5 R:R)"
             win_probability = 58
+        elif final_score >= 5.8:
+            setup_grade = "GRADE_B"
+            setup_grade_title = "⏳ GRADE B (Support / Pullback Setup — Min 1:1.5 R:R)"
+            win_probability = 52
         elif final_score >= 4.5:
             setup_grade = "GRADE_C"
-            setup_grade_title = "🟡 GRADE C (Wait / Neutral — Capital Preserved)"
-            win_probability = 48
+            setup_grade_title = "🟡 GRADE C (Consolidation / Neutral — Capital Preserved)"
+            win_probability = 45
         else:
             setup_grade = "GRADE_D"
-            setup_grade_title = "🛑 GRADE D (Avoid / Bearish — Capital Protected)"
+            setup_grade_title = "🛑 GRADE D (Avoid / Counter-Trend — Capital Protected)"
             win_probability = 35
 
         return {
@@ -425,18 +597,23 @@ class StockAdvisor:
             "vwap_structure": vwap_bands,
             "pivots": pivots,
             "fib_pivots": fib_pivots,
+            "camarilla_pivots": cam_pivots,
+            "volume_profile": vp_info,
+            "hurst_exponent": hurst_h,
+            "fvg_structure": fvg_info,
             "ttm_squeeze": squeeze_info,
             "vsa_profile": vsa_info,
             "relative_strength": rs_info,
             "rvol": rvol_val,
             "pros": pros,
-            "watchouts": watchouts
+            "watchouts": watchouts,
+            "derivatives": deriv_info
         }
 
     @classmethod
     def analyze_stock(cls, symbol: str, horizon: str = "swing") -> Dict[str, Any]:
         """
-        Analyze stock for given horizon using live data.
+        Analyze stock for given horizon using dual-timeframe and live macro index & derivatives confluence.
         """
         sym = clean_symbol(symbol)
         if horizon == "intraday":
@@ -456,8 +633,50 @@ class StockAdvisor:
         if df.empty or len(df) < 25:
             return {"status": "ERROR", "message": f"Could not load sufficient data for {sym}"}
 
-        res = cls.evaluate_df_slice(df, sym, horizon=horizon)
+        curr_close = float(df["Close"].iloc[-1])
+
+        # 1. Real-Time Macro Index Trend & Sector Lookup
+        index_data = get_live_index_trend()
+        index_trend = index_data.get("nifty_trend", "NEUTRAL")
+        sector_name = get_sector_for_symbol(sym)
+
+        # 2. Dual Timeframe Analysis (Daily HTF Anchor)
+        htf_trend = "NEUTRAL"
+        try:
+            df_htf = get_historical_data(sym, period="6mo", interval="1d")
+            if not df_htf.empty and len(df_htf) >= 30:
+                htf_c = df_htf["Close"]
+                htf_ema20 = float(htf_c.ewm(span=20, adjust=False).mean().iloc[-1])
+                htf_ema50 = float(htf_c.ewm(span=50, adjust=False).mean().iloc[-1])
+                htf_curr = float(htf_c.iloc[-1])
+                if htf_curr > htf_ema20 and htf_ema20 > htf_ema50:
+                    htf_trend = "BULLISH"
+                elif htf_curr < htf_ema50 and htf_ema20 < htf_ema50:
+                    htf_trend = "BEARISH"
+        except Exception:
+            pass
+
+        # 3. Derivatives Flow & Option Chain Analysis
+        deriv_info = None
+        try:
+            deriv_info = DerivativesFlowAnalyzer.analyze_derivatives_structure(sym, curr_close)
+        except Exception:
+            pass
+
+        res = cls.evaluate_df_slice(
+            df, sym,
+            horizon=horizon,
+            index_trend=index_trend,
+            htf_trend=htf_trend,
+            sector_name=sector_name,
+            deriv_info=deriv_info
+        )
         res["horizon"] = horizon
         res["horizon_text"] = time_text
         res["holding_time_text"] = time_text
+        res["index_trend"] = index_trend
+        res["nifty_data"] = index_data
+        res["sector"] = sector_name
+        res["htf_trend"] = htf_trend
+        res["derivatives"] = deriv_info
         return res

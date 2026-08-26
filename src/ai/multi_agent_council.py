@@ -245,3 +245,6 @@ class MultiAgentCouncil:
             "weight": 0.25,
             "thesis": thesis
         }
+
+# Clear semantic alias for quantitative/rule-based consensus engine
+QuantitativeConsensusEngine = MultiAgentCouncil

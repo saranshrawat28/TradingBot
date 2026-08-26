@@ -38,7 +38,7 @@ DEFAULT_WATCHLIST = [
     {"symbol": "BAJAJFINSV.NS", "name": "Bajaj Finserv", "category": "Financial Services"},
     {"symbol": "JIOFIN.NS", "name": "Jio Financial Services", "category": "Financial Services"},
     {"symbol": "SHRIRAMFIN.NS", "name": "Shriram Finance", "category": "Financial Services"},
-    {"symbol": "REC.NS", "name": "REC Ltd (Rural Electrification)", "category": "Financial Services"},
+    {"symbol": "RECLTD.NS", "name": "REC Ltd (Rural Electrification)", "category": "Financial Services"},
     {"symbol": "PFC.NS", "name": "Power Finance Corporation", "category": "Financial Services"},
     
     # IT & Tech
@@ -124,8 +124,22 @@ DEFAULT_WATCHLIST = [
     {"symbol": "DLF.NS", "name": "DLF Ltd", "category": "Real Estate"},
 ]
 
+def load_watchlist() -> list[dict]:
+    """Load watchlist from external data_cache/watchlist.json if present, otherwise DEFAULT_WATCHLIST."""
+    import json
+    json_path = DATA_DIR / "watchlist.json"
+    if json_path.exists():
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+                if isinstance(loaded, list) and len(loaded) > 0:
+                    return loaded
+        except Exception:
+            pass
+    return DEFAULT_WATCHLIST
+
 # Quick symbol list
-POPULAR_SYMBOLS = [item["symbol"] for item in DEFAULT_WATCHLIST]
+POPULAR_SYMBOLS = [item["symbol"] for item in load_watchlist()]
 
 # -------------------------------------------------------------
 # Default Risk Management & Capital Settings

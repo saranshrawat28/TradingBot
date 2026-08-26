@@ -138,9 +138,14 @@ def real_apex_signal_generator(df: pd.DataFrame, symbol: str, eval_start_idx: Op
             
             # Conviction threshold for Swing/Positional: Math Score >= 6.5
             if score >= 6.5 and ("BUY" in verdict or "STRONG" in verdict):
-                entry_p = float(analysis.get("entry_price", window["Close"].iloc[-1]))
-                sl_p = float(analysis.get("stop_loss", entry_p * 0.985))
-                t1_p = float(analysis.get("target_1", entry_p * 1.03))
+                entry_p = float(window["Close"].iloc[-1])
+                sl_raw = analysis.get("stop_loss", {})
+                t1_raw = analysis.get("target_1", {})
+                t2_raw = analysis.get("target_2", {})
+                
+                sl_p = float(sl_raw.get("price", entry_p * 0.985) if isinstance(sl_raw, dict) else (sl_raw or entry_p * 0.985))
+                t1_p = float(t1_raw.get("price", entry_p * 1.025) if isinstance(t1_raw, dict) else (t1_raw or entry_p * 1.025))
+                t2_p = float(t2_raw.get("price", entry_p * 1.050) if isinstance(t2_raw, dict) else (t2_raw or entry_p * 1.050))
                 
                 signals.append(Signal(
                     date=window.index[-1],
@@ -152,7 +157,7 @@ def real_apex_signal_generator(df: pd.DataFrame, symbol: str, eval_start_idx: Op
                     confidence=score,
                     meta={"regime": analysis.get("regime", "UNKNOWN"), "rvol": analysis.get("rvol", 1.0)}
                 ))
-        except Exception:
+        except Exception as e:
             continue
             
     return signals

@@ -503,3 +503,113 @@ class SmartStrikeSelector:
             "pnl_at_expiry": [round(float(y), 2) for y in pnl_values]
         }
 
+
+class DerivativesFlowAnalyzer:
+    """
+    Live NSE Derivatives Telemetry & Institutional Order Flow Analyzer.
+    Analyzes:
+    1. Open Interest (OI) Accumulation: Long Build-up, Short Covering, Short Build-up, Long Unwinding.
+    2. Option Writer Walls: Call Writer Wall (Ceiling) & Put Writer Floor (Demand Support).
+    3. Put-Call Ratio (PCR) Telemetry & Max Pain.
+    4. Runway Clearance to Nearest Resistance Wall.
+    """
+
+    @classmethod
+    def analyze_derivatives_structure(
+        cls,
+        symbol: str,
+        spot_price: float,
+        dte_days: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Extracts multi-strike option chain and evaluates institutional derivatives positioning.
+        """
+        if spot_price <= 0:
+            return {"status": "ERROR", "message": "Invalid spot price"}
+
+        # Calculate DTE if not provided
+        if dte_days is None:
+            now = get_ist_now()
+            days_ahead = (3 - now.weekday()) % 7 # Thursday expiry
+            if days_ahead == 0 and now.hour >= 15 and now.minute >= 30:
+                days_ahead = 7
+            dte_days = max(0.2, float(days_ahead) + max(0.0, (15.5 - (now.hour + now.minute / 60.0)) / 6.25))
+
+        # Build synchronized option chain matrix
+        chain = OptionChainBuilder.build_option_chain_matrix(
+            symbol=symbol,
+            spot_price=spot_price,
+            dte_days=dte_days,
+            strikes_count=15
+        )
+
+        strikes = chain.get("strikes", [])
+        if not strikes:
+            return {"status": "ERROR", "message": "No strikes generated"}
+
+        # 1. Identify Call Writer Wall (Maximum CE OI at or above spot)
+        max_ce_oi = -1
+        call_writer_wall = spot_price * 1.05
+        for s in strikes:
+            ce_oi = s.get("ce_oi", 0)
+            if s["strike"] >= spot_price and ce_oi > max_ce_oi:
+                max_ce_oi = ce_oi
+                call_writer_wall = float(s["strike"])
+
+        # 2. Identify Put Writer Floor (Maximum PE OI at or below spot)
+        max_pe_oi = -1
+        put_writer_floor = spot_price * 0.95
+        for s in strikes:
+            pe_oi = s.get("pe_oi", 0)
+            if s["strike"] <= spot_price and pe_oi > max_pe_oi:
+                max_pe_oi = pe_oi
+                put_writer_floor = float(s["strike"])
+
+        # 3. PCR & Max Pain
+        pcr_data = chain.get("pcr", {})
+        pcr_oi = float(pcr_data.get("pcr_oi", 1.00))
+        max_pain = float(chain.get("max_pain", spot_price))
+
+        # 4. Runway and Distances
+        runway_to_call_wall_pct = round(((call_writer_wall - spot_price) / spot_price) * 100.0, 2)
+        distance_to_put_floor_pct = round(((spot_price - put_writer_floor) / spot_price) * 100.0, 2)
+
+        # 5. OI Flow Classification
+        if pcr_oi >= 1.20 and spot_price >= max_pain:
+            oi_interpretation = "LONG_BUILDUP"
+            oi_desc = "Aggressive Put writing with spot above Max Pain. Institutional smart-money accumulation."
+            bias = "STRONG_BULLISH"
+        elif pcr_oi >= 1.00:
+            oi_interpretation = "PUT_WRITING_SUPPORT"
+            oi_desc = "Put writers holding key strike floors. Healthy demand absorption."
+            bias = "BULLISH"
+        elif pcr_oi <= 0.75 and spot_price <= max_pain:
+            oi_interpretation = "SHORT_BUILDUP"
+            oi_desc = "Heavy Call writing overhead with spot below Max Pain. Institutional distribution."
+            bias = "BEARISH"
+        elif pcr_oi < 0.90:
+            oi_interpretation = "SHORT_COVERING"
+            oi_desc = "Low Put participation. Rebound driven primarily by short covering."
+            bias = "NEUTRAL"
+        else:
+            oi_interpretation = "NEUTRAL_BALANCED"
+            oi_desc = "Balanced Call and Put open interest."
+            bias = "NEUTRAL"
+
+        return {
+            "status": "SUCCESS",
+            "symbol": symbol,
+            "spot_price": spot_price,
+            "call_writer_wall": call_writer_wall,
+            "put_writer_floor": put_writer_floor,
+            "max_pain": max_pain,
+            "pcr_oi": pcr_oi,
+            "pcr_volume": float(pcr_data.get("pcr_volume", 1.00)),
+            "runway_to_call_wall_pct": runway_to_call_wall_pct,
+            "distance_to_put_floor_pct": distance_to_put_floor_pct,
+            "oi_interpretation": oi_interpretation,
+            "oi_desc": oi_desc,
+            "derivatives_bias": bias,
+            "has_clear_runway": runway_to_call_wall_pct >= 1.2
+        }
+

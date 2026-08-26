@@ -125,3 +125,31 @@ class SoftwareOCOManager:
         except Exception:
             pass
         return recovered
+
+    @classmethod
+    def modify_exchange_sl_order(
+        cls,
+        broker: Any,
+        symbol: str,
+        new_sl_price: float,
+        sl_order_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Dynamically modifies the trigger price of an active exchange SL-M order
+        to track the ratcheted trailing stop-loss level.
+        """
+        if not broker or not sl_order_id or new_sl_price <= 0:
+            return {"status": "SKIPPED", "message": "No active broker or order ID"}
+
+        try:
+            if hasattr(broker, "modify_order"):
+                res = broker.modify_order(
+                    order_id=sl_order_id,
+                    sl=new_sl_price,
+                    trigger_price=new_sl_price
+                )
+                return {"status": "SUCCESS", "new_sl": new_sl_price, "order_id": sl_order_id}
+            else:
+                return {"status": "MOCKED_OR_NOT_SUPPORTED", "new_sl": new_sl_price}
+        except Exception as e:
+            return {"status": "ERROR", "message": str(e)}

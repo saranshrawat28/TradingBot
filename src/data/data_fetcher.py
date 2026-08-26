@@ -526,3 +526,77 @@ def get_option_chain_data(symbol: str = "NIFTY", dte_days: Optional[float] = Non
         dte_days=round(dte_days, 2)
     )
 
+_INDEX_TREND_CACHE = {"timestamp": 0, "trend": "NEUTRAL", "data": {}}
+
+SECTOR_MAP = {
+    # IT
+    "TCS.NS": "NIFTY IT", "INFY.NS": "NIFTY IT", "WIPRO.NS": "NIFTY IT", "HCLTECH.NS": "NIFTY IT",
+    "TECHM.NS": "NIFTY IT", "LTIM.NS": "NIFTY IT", "COFORGE.NS": "NIFTY IT", "PERSISTENT.NS": "NIFTY IT",
+    # Banking & Financials
+    "HDFCBANK.NS": "NIFTY BANK", "ICICIBANK.NS": "NIFTY BANK", "SBIN.NS": "NIFTY BANK",
+    "KOTAKBANK.NS": "NIFTY BANK", "AXISBANK.NS": "NIFTY BANK", "INDUSINDBK.NS": "NIFTY BANK",
+    "BAJFINANCE.NS": "NIFTY FINANCIAL SERVICES", "BAJAJFINSV.NS": "NIFTY FINANCIAL SERVICES",
+    # Energy / Oil & Gas / Power
+    "RELIANCE.NS": "NIFTY ENERGY", "ONGC.NS": "NIFTY ENERGY", "NTPC.NS": "NIFTY ENERGY",
+    "POWERGRID.NS": "NIFTY ENERGY", "BPCL.NS": "NIFTY ENERGY", "IOC.NS": "NIFTY ENERGY",
+    # Auto
+    "TMCV.NS": "NIFTY AUTO", "TMPV.NS": "NIFTY AUTO", "M&M.NS": "NIFTY AUTO",
+    "MARUTI.NS": "NIFTY AUTO", "BAJAJ-AUTO.NS": "NIFTY AUTO", "HEROMOTOCO.NS": "NIFTY AUTO",
+    # Metals
+    "TATASTEEL.NS": "NIFTY METAL", "JSWSTEEL.NS": "NIFTY METAL", "HINDALCO.NS": "NIFTY METAL",
+    "VEDL.NS": "NIFTY METAL", "COALINDIA.NS": "NIFTY METAL",
+    # Pharma & Healthcare
+    "SUNPHARMA.NS": "NIFTY PHARMA", "CIPLA.NS": "NIFTY PHARMA", "DRREDDY.NS": "NIFTY PHARMA",
+    "DIVISLAB.NS": "NIFTY PHARMA", "APOLLOHOSP.NS": "NIFTY HEALTHCARE",
+    # Consumer / FMCG / Retail
+    "ITC.NS": "NIFTY FMCG", "HINDUNILVR.NS": "NIFTY FMCG", "NESTLEIND.NS": "NIFTY FMCG",
+    "BRITANNIA.NS": "NIFTY FMCG", "TATACONSUM.NS": "NIFTY FMCG", "TITAN.NS": "NIFTY CONSUMER",
+    "ETERNAL.NS": "NIFTY CONSUMER SERVICES"
+}
+
+def get_sector_for_symbol(symbol: str) -> str:
+    """Returns the primary Sector Index for any Indian ticker."""
+    sym = clean_symbol(symbol)
+    return SECTOR_MAP.get(sym, "NIFTY 500")
+
+def get_live_index_trend() -> Dict[str, Any]:
+    """
+    Returns real-time macro breadth and trend for NIFTY 50 (^NSEI).
+    Evaluates intraday price vs 20 EMA and change percentage.
+    Cached for 60 seconds to optimize performance.
+    """
+    global _INDEX_TREND_CACHE
+    now = time.time()
+    if (now - _INDEX_TREND_CACHE["timestamp"]) < 60 and _INDEX_TREND_CACHE.get("trend") not in ["UNKNOWN", None]:
+        return _INDEX_TREND_CACHE["data"]
+
+    try:
+        df_nifty = get_historical_data("^NSEI", period="5d", interval="15m")
+        if not df_nifty.empty and len(df_nifty) >= 20:
+            c = df_nifty["Close"]
+            curr_p = float(c.iloc[-1])
+            ema20 = float(c.ewm(span=20, adjust=False).mean().iloc[-1])
+            prev_close = float(c.iloc[-2]) if len(c) > 1 else curr_p
+            pct_chg = ((curr_p - prev_close) / prev_close) * 100.0 if prev_close > 0 else 0.0
+
+            if curr_p >= ema20 and pct_chg >= -0.05:
+                nifty_trend = "BULLISH"
+            elif curr_p < ema20 and pct_chg < -0.15:
+                nifty_trend = "BEARISH"
+            else:
+                nifty_trend = "NEUTRAL"
+
+            result = {
+                "nifty_trend": nifty_trend,
+                "nifty_price": round(curr_p, 2),
+                "nifty_change_pct": round(pct_chg, 2),
+                "status": "SUCCESS"
+            }
+            _INDEX_TREND_CACHE = {"timestamp": now, "trend": nifty_trend, "data": result}
+            return result
+    except Exception:
+        pass
+
+    fallback = {"nifty_trend": "NEUTRAL", "nifty_price": 24800.0, "nifty_change_pct": 0.0, "status": "DEFAULT"}
+    return fallback
+

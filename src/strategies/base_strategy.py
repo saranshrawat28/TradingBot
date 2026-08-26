@@ -1,5 +1,6 @@
 """
 Base class for all Algorithmic Trading Strategies.
+Implements the Template Method pattern for reliable data validation, copying, and signal lifecycle.
 """
 
 from abc import ABC, abstractmethod
@@ -16,17 +17,40 @@ class BaseStrategy(ABC):
       0: HOLD / NO ACTION
     """
     
-    def __init__(self, name: str, params: dict = None):
+    def __init__(self, name: str, params: dict = None, min_period: int = 20):
         self.name = name
         self.params = params or {}
+        self.min_period = min_period
         
-    @abstractmethod
+    def _compute_signals(self, data: pd.DataFrame) -> pd.DataFrame:
+        """
+        Subclasses override this template method to calculate indicators
+        and assign 'Signal' (1, -1, 2, -2, 0) and 'Signal_Reason'.
+        """
+        raise NotImplementedError("Subclasses must implement _compute_signals")
+
     def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Takes OHLCV DataFrame, computes indicators, and appends a 'Signal' column.
-        Returns the updated DataFrame.
+        Template Method: Validates DataFrame, handles boundary conditions,
+        initializes output columns, and delegates to _compute_signals.
         """
-        pass
+        if df.empty or len(df) < self.min_period:
+            out = df.copy() if not df.empty else pd.DataFrame(columns=["Close", "Signal", "Signal_Reason"])
+            out["Signal"] = 0
+            out["Signal_Reason"] = "Insufficient data"
+            return out
+            
+        data = df.copy()
+        if "Signal" not in data.columns:
+            data["Signal"] = 0
+        if "Signal_Reason" not in data.columns:
+            data["Signal_Reason"] = ""
+            
+        try:
+            return self._compute_signals(data)
+        except NotImplementedError:
+            # If subclass overrides generate_signals directly, return data
+            return data
         
     def get_latest_signal(self, df: pd.DataFrame) -> dict:
         """Get signal for the most recent candle."""

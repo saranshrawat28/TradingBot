@@ -96,6 +96,58 @@ class AIGuardrails:
         final_lots = max(1, min(raw_lots, max_lots_cap, max_capital_lots))
         return int(final_lots * lot_size)
 
+    @classmethod
+    def calculate_sl_tp_prices(
+        cls,
+        side: str,
+        entry_price: float,
+        atr_value: float = None,
+        atr_multiplier_sl: float = 1.5,
+        risk_reward_ratio: float = 2.0,
+        default_sl_pct: float = 1.5,
+        default_tp_pct: float = 3.0
+    ) -> tuple[float, float]:
+        """Calculate Stop-Loss and Take-Profit price levels with ATR or default percentage."""
+        if atr_value and atr_value > 0:
+            sl_distance = atr_value * atr_multiplier_sl
+            tp_distance = sl_distance * risk_reward_ratio
+        else:
+            sl_distance = entry_price * (default_sl_pct / 100.0)
+            tp_distance = entry_price * (default_tp_pct / 100.0)
+            
+        if side.upper() in ["BUY", "LONG"]:
+            sl = entry_price - sl_distance
+            tp = entry_price + tp_distance
+        else:
+            sl = entry_price + sl_distance
+            tp = entry_price - tp_distance
+            
+        return round(max(0.1, sl), 2), round(max(0.1, tp), 2)
+
+    @classmethod
+    def update_trailing_stop(
+        cls,
+        side: str,
+        entry_price: float,
+        current_price: float,
+        highest_price: float,
+        current_sl: float,
+        trailing_sl_pct: float = 1.5
+    ) -> float:
+        """Calculate updated trailing stop-loss price as profit advances."""
+        trailing_pct = trailing_sl_pct / 100.0
+        
+        if side.upper() in ["BUY", "LONG"]:
+            if highest_price > entry_price:
+                new_sl = highest_price * (1.0 - trailing_pct)
+                return round(max(current_sl or 0.0, new_sl), 2)
+        else:
+            if highest_price < entry_price:
+                new_sl = highest_price * (1.0 + trailing_pct)
+                return round(min(current_sl or 999999.0, new_sl), 2)
+                
+        return current_sl
+
     def evaluate_proposal(
         self,
         proposal: dict,
@@ -210,11 +262,15 @@ class AIGuardrails:
             self._log_audit("BLOCKED", proposal, reason)
             return False, reason, {"action": "HOLD"}
 
-        # 8. Index Correlation Gate (Never buy long equity if Nifty is plunging > -1.0%)
-        nifty_chg = portfolio_state.get("nifty_change_pct", 0.0)
+        # 8. Index Correlation Gate (Never buy long equity if Nifty is plunging <= -1.0%, never short if surging >= +1.0%)
+        nifty_chg = float(portfolio_state.get("nifty_change_pct", 0.0))
         is_index = any(idx in target_asset.upper() for idx in ["NIFTY", "BANKNIFTY", "FINNIFTY", "^NSEI", "^NSEBANK"])
         if not is_index and action in ["BUY_STOCK", "BUY_CALL"] and nifty_chg <= -1.0:
             reason = f"🛑 Macro Index Gate: NIFTY 50 is down {nifty_chg:+.2f}%. Fresh long stock entries blocked."
+            self._log_audit("BLOCKED", proposal, reason)
+            return False, reason, {"action": "HOLD"}
+        if not is_index and action in ["SELL_STOCK", "BUY_PUT", "SHORT"] and nifty_chg >= 1.0:
+            reason = f"🛑 Macro Index Gate: NIFTY 50 is up {nifty_chg:+.2f}%. Fresh short stock entries blocked."
             self._log_audit("BLOCKED", proposal, reason)
             return False, reason, {"action": "HOLD"}
 
