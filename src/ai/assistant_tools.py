@@ -20,7 +20,7 @@ from src.strategies.indicators import (
 from src.strategies.options_greeks import SmartStrikeSelector, BlackScholesEngine
 from src.engine.pre_market_analyzer import PreMarketAnalyzer
 from src.utils.storage import get_portfolio_state, get_open_positions
-from src.utils.helpers import display_symbol_name, clean_symbol, format_currency_inr, get_ist_now
+from src.utils.helpers import display_symbol_name, clean_symbol, format_currency_inr, get_ist_now, format_nse_option_contract
 
 class AssistantToolRunner:
     """
@@ -269,6 +269,19 @@ class AssistantToolRunner:
         if spot_price <= 0:
             spot_price = 24500.0 if "NIFTY" in display_name else 1000.0
 
+        opt_type = "CE" if "CALL" in bias else "PE"
+        contract_meta = format_nse_option_contract(
+            symbol=display_name,
+            spot_price=spot_price,
+            opt_type=opt_type
+        )
+        strike_val = contract_meta["strike"]
+        contract_name = contract_meta["display_title"]
+        trading_sym = contract_meta["trading_symbol"]
+        broker_query = contract_meta["broker_search_query"]
+        moneyness = contract_meta["moneyness"]
+        exp_str = contract_meta["expiry_str"]
+
         opt_spec = SmartStrikeSelector.select_optimal_strike(
             symbol=display_name,
             spot_price=spot_price,
@@ -277,7 +290,6 @@ class AssistantToolRunner:
             preference=preference
         )
 
-        contract_name = opt_spec.get("contract_symbol", f"{display_name} {opt_spec.get('chosen_strike')} {opt_spec.get('option_type')}")
         theo_p = float(opt_spec.get("theoretical_price", 120.0))
         greeks = opt_spec.get("greeks", {})
         delta = float(greeks.get("delta", 0.50))
@@ -287,18 +299,20 @@ class AssistantToolRunner:
         iv = float(opt_spec.get("implied_volatility", 0.15) * 100.0)
 
         # Risk-reward targets
-        t1_premium = round(theo_p * 1.35, 1) # +35% target
-        t2_premium = round(theo_p * 1.65, 1) # +65% runner
-        sl_premium = round(theo_p * 0.75, 1) # -25% safety stop
+        t1_premium = round(theo_p * 1.35, 1)  # +35% target
+        t2_premium = round(theo_p * 1.65, 1)  # +65% runner
+        sl_premium = round(theo_p * 0.75, 1)  # -25% safety stop
 
         capital_req = theo_p * lot_size
 
         md_summary = (
             f"### 🎯 Recommended Option Strike: **{contract_name}**\n\n"
+            f"• **🔍 Broker Search Query (Zerodha / Groww / Dhan)**: `{broker_query}`\n"
+            f"• **Exchange Tradingsymbol**: `{trading_sym}` &bull; *{moneyness}*\n"
             f"• **Underlying Spot**: ₹{spot_price:,.2f} ({display_name})\n"
             f"• **Estimated Premium**: `₹{theo_p:,.2f}` (1 Lot = {lot_size} qty $\\rightarrow$ `₹{capital_req:,.2f}`)\n"
-            f"• **Target 1 (+35%)**: <strong style='color: #10b981;'>₹{t1_premium:,.2f}</strong>\n"
-            f"• **Target 2 (+65%)**: <strong style='color: #10b981;'>₹{t2_premium:,.2f}</strong>\n"
+            f"• **Target 1 (+35%)**: <strong style='color: #10b981;'>₹{t1_premium:,.2f}</strong> (Book 50% & move SL to BE)\n"
+            f"• **Target 2 (+65%)**: <strong style='color: #10b981;'>₹{t2_premium:,.2f}</strong> (Runner)\n"
             f"• **Safety Stop-Loss (-25%)**: <strong style='color: #f43f5e;'>₹{sl_premium:,.2f}</strong>\n\n"
             f"**⚡ Analytical Black-Scholes Greeks**:\n"
             f"- **Delta (Δ)**: `{delta:+.2f}` (Price sensitivity per ₹1 spot move)\n"
@@ -315,8 +329,12 @@ class AssistantToolRunner:
                 "display_name": display_name,
                 "spot_price": spot_price,
                 "contract_symbol": contract_name,
-                "strike": opt_spec.get("chosen_strike"),
-                "option_type": opt_spec.get("option_type"),
+                "trading_symbol": trading_sym,
+                "broker_search_query": broker_query,
+                "universal_search": broker_query,
+                "moneyness": moneyness,
+                "strike": strike_val,
+                "option_type": opt_type,
                 "theoretical_premium": theo_p,
                 "lot_size": lot_size,
                 "capital_required": capital_req,

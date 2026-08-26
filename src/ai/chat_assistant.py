@@ -32,23 +32,29 @@ class TradingChatAssistant:
     Stateful Natural Language Trading Assistant for Indian Equities and F&O.
     """
 
-    SYSTEM_PROMPT = """You are ApexTrade AI, an elite institutional algorithmic trading terminal and quantitative advisor for Indian markets (NSE / BSE / F&O).
-Your mission is to provide disciplined, risk-first trade analysis with surgical accuracy, exact technical calculations, and zero robotic disclaimers.
+    SYSTEM_PROMPT = """You are ApexTrade AI, an elite institutional algorithmic trading terminal and quantitative desk advisor for Indian capital markets (NSE / BSE / NFO).
+Your mission is to provide disciplined, risk-first trade analysis with surgical accuracy, exact technical levels, and institutional professionalism.
 
 CRITICAL DIRECTIVES:
-1. STRICT ZERO-DISCLAIMER POLICY: NEVER EVER say "I am an AI assistant and not a real-time terminal", "I do not have access to real-time data", or "As an AI language model...". You are directly interfaced with our live quantitative calculation engines.
-2. Ground every analysis on factual data provided in the <market_data> tags or scanner results.
-3. When analyzing any stock, always clearly state:
-   - Live Price & Mathematical Score (out of 10)
-   - Ideal Entry Zone
-   - Target 1 (+₹ gain / +% / locks 50% profits to Breakeven)
-   - Target 2 (+₹ gain / runner)
-   - Safety Stop-Loss (-₹ loss / -% / mandatory)
-   - Risk-to-Reward Ratio (Blended >= 1.6:1 net of STT/exchange fees)
-4. When asked for technical scans (e.g. Golden Cross, Camarilla Breakout, TTM Squeeze, High RVOL, RSI Oversold), present the exact scanned stocks, EMA levels, RSI values, and trade execution plans directly.
-5. If the user asks general trading questions (e.g. "What is ADX?", "Explain CPR pivots"), explain clearly with Indian market examples.
-6. If the user speaks in Hindi/Hinglish (e.g. "Aaj Nifty kaisa lag raha hai?"), respond warmly in friendly, professional Hinglish.
-7. Output format: ALWAYS output your response in clean, human-readable Markdown with bold titles, bullet points, and tables. NEVER return raw JSON code blocks.
+1. STRICT ZERO-DISCLAIMER POLICY: NEVER EVER say "I am an AI assistant and not a real-time terminal", "I do not have access to real-time data", or "As an AI language model...". You are directly interfaced with live quantitative market calculation engines.
+2. Ground every analysis on factual live data provided in the <market_data>, <macro_market_context>, and <portfolio_context> tags.
+3. PROFESSIONAL BRIEFING STRUCTURE:
+   When analyzing any stock or index, structure your briefing with:
+   - ⚡ **Executive Summary**: Asset Name, Live Price, Action Verdict (BUY / BUY ON PULLBACK / WAIT / AVOID), and Conviction Score.
+   - 🎯 **Institutional Trade Plan (1:2 R:R Focus)**:
+     • Entry Zone: Exact price range
+     • Stop-Loss: Exact price and risk per share (-X.X%)
+     • Target 1: Exact price (+X.X% / locks 50% profit & trails SL to Breakeven)
+     • Target 2: Exact price (+X.X% / runner)
+     • Risk-to-Reward Ratio: Minimum 1:1.5 to 1:2.0
+   - 🧠 **Technical & Order Flow Catalyst**: State why this setup exists (e.g. 20 EMA pullback, VWAP bounce, Camarilla H4 breakout, Volume Profile POC support).
+   - ⚠️ **Risk & Overextension Check**: If price is extended >1.8 ATR above 20 EMA, warn the user: "⚠️ Overextended: High risk of climax pullback; wait for a pullback to the 20 EMA floor."
+4. FOR INDEX OPTIONS (NIFTY / BANK NIFTY):
+   - Always specify the exact ATM strike (e.g. `BANKNIFTY 57800 CE`), universal broker search query (`BANKNIFTY 57800 CE`), and entry/exit targets.
+   - Recommend Calls (CE) only when price is above intraday VWAP; recommend Puts (PE) only when below intraday VWAP.
+5. If the user asks general trading questions or strategy concepts, explain like an institutional prop trader with concrete Indian market examples.
+6. If the user speaks in Hindi/Hinglish (e.g. "Aaj Nifty kaisa lag raha hai?"), respond in polished, professional Hinglish.
+7. Format everything in clean, beautiful Markdown with bold headings, bullet points, and tables. NEVER return raw unparsed JSON.
 """
 
     KNOWLEDGE_BASE = {
@@ -132,7 +138,8 @@ CRITICAL DIRECTIVES:
         "OPEN", "ENTRY", "EXIT", "ZONE", "SAFE", "RISK", "ORDER", "ORDERS", "TAKE", "MAKE", "HAVE",
         "HAS", "HAD", "BE", "BEEN", "BEING", "DO", "DOES", "DID", "LOOK", "SEEM", "FEEL", "NOW",
         "SUGGEST", "SUGGESTION", "SUGGESTIONS", "RECOMMEND", "RECOMMENDATION", "RECOMMENDATIONS",
-        "PICKS", "FIRST", "SECOND", "THIRD", "ONE", "TWO", "THREE"
+        "PICKS", "FIRST", "SECOND", "THIRD", "ONE", "TWO", "THREE",
+        "MARKET", "MOOD", "SENTIMENT", "OUTLOOK", "TREND", "TRENDS", "OVERVIEW"
     }
 
     @classmethod
@@ -174,6 +181,49 @@ CRITICAL DIRECTIVES:
                     pass
 
         return None
+
+    @classmethod
+    def _get_live_macro_context(cls) -> str:
+        """Fetches live telemetry for NIFTY 50 and BANK NIFTY to ground all conversational responses."""
+        try:
+            nifty_q = get_live_quote("^NSEI")
+            bank_q = get_live_quote("^NSEBANK")
+            nifty_p = float(nifty_q.get("price", 0.0))
+            nifty_chg = float(nifty_q.get("change_pct", 0.0))
+            bank_p = float(bank_q.get("price", 0.0))
+            bank_chg = float(bank_q.get("change_pct", 0.0))
+            
+            n_mood = "Bullish" if nifty_chg > 0.3 else ("Bearish" if nifty_chg < -0.3 else "Neutral / Range")
+            b_mood = "Bullish" if bank_chg > 0.3 else ("Bearish" if bank_chg < -0.3 else "Neutral / Range")
+            
+            return (
+                "<macro_market_context>\n"
+                f"• NIFTY 50: ₹{nifty_p:,.2f} ({nifty_chg:+.2f}%) — Sentiment: {n_mood}\n"
+                f"• BANK NIFTY: ₹{bank_p:,.2f} ({bank_chg:+.2f}%) — Sentiment: {b_mood}\n"
+                "</macro_market_context>\n"
+            )
+        except Exception:
+            return ""
+
+    @classmethod
+    def _get_portfolio_context(cls, broker_instance=None) -> str:
+        """Fetches available capital and open positions to provide capital-aware sizing."""
+        try:
+            state = get_portfolio_state()
+            cash = float(state.get("cash", 100000.0))
+            positions = state.get("positions", [])
+            pos_summary = []
+            for p in positions[:4]:
+                pos_summary.append(f"{p.get('symbol')}: {p.get('quantity')} shares @ ₹{float(p.get('entry_price', 0)):,.2f}")
+            pos_str = ", ".join(pos_summary) if pos_summary else "None (100% Cash Buffer)"
+            return (
+                "<portfolio_context>\n"
+                f"• Available Trading Cash Margin: ₹{cash:,.2f}\n"
+                f"• Active Open Positions: {pos_str}\n"
+                "</portfolio_context>\n"
+            )
+        except Exception:
+            return ""
 
     @classmethod
     def _clean_disclaimers(cls, text: str) -> str:
@@ -659,7 +709,7 @@ CRITICAL DIRECTIVES:
         stock_analysis = {}
         updated_context = active_context or {}
 
-        if symbol and symbol not in ["^NSEI", "^NSEBANK", "^BSESN"]:
+        if symbol:
             try:
                 stock_analysis = StockAdvisor.analyze_stock(symbol, horizon=resolved_horizon)
             except Exception:
@@ -695,7 +745,16 @@ CRITICAL DIRECTIVES:
                 budget_match = re.search(r"(?:rs\.?|inr|₹)?\s?(\d{4,7})", q_no_commas)
                 budget_inr = float(budget_match.group(1)) if budget_match else 25000.0
                 qty_match = re.search(r"(\d+)\s*(?:shares|qty|stocks)", q_no_commas)
-                qty = int(qty_match.group(1)) if qty_match else max(1, int(budget_inr / max(1.0, curr_p)))
+                
+                is_index_sym = symbol in ["^NSEI", "^NSEBANK", "^BSESN"]
+                if is_index_sym:
+                    lot_sz = 15 if "BANK" in symbol else 25
+                    qty = int(qty_match.group(1)) if qty_match else lot_sz
+                    prod_type = "NFO Option / Futures (Intraday MIS)"
+                else:
+                    qty = int(qty_match.group(1)) if qty_match else max(1, int(budget_inr / max(1.0, curr_p)))
+                    prod_type = "MIS Intraday (Auto square-off at 3:15 PM)" if resolved_horizon == "intraday" else "CNC Delivery (Swing)"
+
                 actual_capital = qty * curr_p
 
                 ui_card_type = "TRADE"
@@ -703,7 +762,7 @@ CRITICAL DIRECTIVES:
                     "symbol": symbol,
                     "display_name": disp_name,
                     "action": action_side,
-                    "product_type": "MIS Intraday (Auto square-off at 3:15 PM)" if resolved_horizon == "intraday" else "CNC Delivery (Swing)",
+                    "product_type": prod_type,
                     "quantity": qty,
                     "entry_price": curr_p,
                     "capital_required": actual_capital,
@@ -766,12 +825,22 @@ CRITICAL DIRECTIVES:
                     context_block += f"• Rational: {stock_analysis.get('verdict_desc', '')}\n"
                 context_block += "</market_data>\n"
 
+                macro_block = cls._get_live_macro_context()
+                portfolio_block = cls._get_portfolio_context(broker_instance)
+
                 history_text = ""
                 if history:
                     recent = history[-4:]
                     history_text = "Recent Conversation:\n" + "\n".join([f"{m['role'].upper()}: {m['content']}" for m in recent]) + "\n\n"
 
-                prompt_content = f"{context_block}\n{history_text}User Question: {user_query}\n\nProvide a structured, helpful, professional response in plain English (or friendly Hinglish if the user asks in Hindi). Always format nicely in human markdown."
+                prompt_content = (
+                    f"{macro_block}\n"
+                    f"{portfolio_block}\n"
+                    f"{context_block}\n"
+                    f"{history_text}User Question: {user_query}\n\n"
+                    "Provide an authoritative, structured, institutional briefing following the SYSTEM_PROMPT directives. "
+                    "Include Executive Summary, 1:2 R:R Target Plan, and Technical Catalysts in clean Markdown."
+                )
                 response_text = llm.generate_response(user_prompt=prompt_content, system_prompt=cls.SYSTEM_PROMPT)
                 if response_text and len(response_text.strip()) > 10:
                     response_text = cls._clean_disclaimers(response_text)
@@ -929,7 +998,38 @@ CRITICAL DIRECTIVES:
             lines.append("\n💡 *Click on any Action Card below to place a safe bracket trade with 1-click execution.*")
             return "\n\n".join(lines)
 
-        # 4. Friendly Greeting / General Help Fallback
+        # 4. Live Market Macro Sentiment & Trends
+        q_clean = query.lower()
+        if any(k in q_clean for k in ["market mood", "market today", "how is market", "market trend", "nifty trend", "bank nifty trend", "market bullish", "market bearish", "aaj market", "overall market", "market direction"]):
+            try:
+                nifty_q = get_live_quote("^NSEI")
+                bank_q = get_live_quote("^NSEBANK")
+                nifty_p = float(nifty_q.get("price", 0.0))
+                nifty_chg = float(nifty_q.get("change_pct", 0.0))
+                bank_p = float(bank_q.get("price", 0.0))
+                bank_chg = float(bank_q.get("change_pct", 0.0))
+                
+                n_dir = "🟢 Bullish" if nifty_chg > 0.25 else ("🔴 Bearish" if nifty_chg < -0.25 else "🟡 Neutral / Range-Bound")
+                b_dir = "🟢 Bullish" if bank_chg > 0.25 else ("🔴 Bearish" if bank_chg < -0.25 else "🟡 Neutral / Range-Bound")
+                
+                overall_bias = "Bullish continuation favored" if (nifty_chg > 0 and bank_chg > 0) else (
+                    "Bearish pressure dominant" if (nifty_chg < 0 and bank_chg < 0) else "Mixed divergence — selective stock picking advised"
+                )
+                
+                return (
+                    "🏛️ **Institutional Live Market Macro Overview**:\n\n"
+                    f"• **NIFTY 50**: `₹{nifty_p:,.2f}` ({nifty_chg:+.2f}%) &bull; **Bias**: {n_dir}\n"
+                    f"• **BANK NIFTY**: `₹{bank_p:,.2f}` ({bank_chg:+.2f}%) &bull; **Bias**: {b_dir}\n"
+                    f"• 🧭 **Desk Assessment**: *{overall_bias}*\n\n"
+                    "**🎯 Execution Directives**:\n"
+                    "1. **Trend Alignment**: Only take Long setups in stocks trading above their 20 EMA and intraday VWAP.\n"
+                    "2. **Options Strategy**: If Index is above VWAP $\\rightarrow$ Look for ATM Call (CE) pullbacks; if below VWAP $\\rightarrow$ Focus on ATM Put (PE) breakouts.\n"
+                    "3. **Risk Guard**: Maintain strict 1:2.0 Risk-to-Reward on every entry with hard Stop-Loss."
+                )
+            except Exception:
+                pass
+
+        # 5. Friendly Greeting / General Help Fallback
         q_lower = query.lower()
         if any(g in q_lower for g in ["hi", "hello", "hey", "namaste", "kaise", "help", "start", "who are you"]):
             return (
