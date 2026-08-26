@@ -23,16 +23,34 @@ def render_stock_advisor_tab(broker_instance, is_simple_mode: bool = False):
     <div style='color: #94a3b8; font-size: 0.90rem; margin-bottom: 12px;'>Get instant, data-backed advice on any Indian stock with exact Entry, Stop-Loss, and Target prices.</div>
     """, unsafe_allow_html=True)
     
-    col_input, col_horizon, col_btn = st.columns([2, 1.5, 1])
+    col_input, col_horizon, col_btn = st.columns([2.5, 1.5, 1])
     with col_input:
-        adv_sym = st.selectbox(
-            "Select Indian Stock to Analyze:",
-            config.POPULAR_SYMBOLS,
-            index=config.POPULAR_SYMBOLS.index("RELIANCE.NS") if "RELIANCE.NS" in config.POPULAR_SYMBOLS else 0,
-            format_func=lambda x: f"{display_symbol_name(x)} ({clean_symbol(x)})",
-            key="adv_stock_select_main"
+        stock_mode = st.radio(
+            "Selection Mode:",
+            ["📋 Watchlist & IPOs", "🔍 Type Any Custom / New NSE Ticker"],
+            horizontal=True,
+            key="adv_mode_radio"
         )
+        if "Watchlist" in stock_mode:
+            adv_sym = st.selectbox(
+                "Select Indian Stock / IPO:",
+                config.POPULAR_SYMBOLS,
+                index=config.POPULAR_SYMBOLS.index("RELIANCE.NS") if "RELIANCE.NS" in config.POPULAR_SYMBOLS else 0,
+                format_func=lambda x: f"{display_symbol_name(x)} ({clean_symbol(x)})",
+                key="adv_stock_select_main"
+            )
+        else:
+            from src.data.data_fetcher import resolve_ticker
+            custom_input = st.text_input(
+                "Enter Any NSE Ticker / Newly Listed Stock:",
+                value="SWIGGY",
+                placeholder="e.g. SWIGGY, HYUNDAI, BAJAJHFL, WAAREEENER",
+                help="Type any stock listed on the National Stock Exchange (NSE).",
+                key="adv_custom_input_main"
+            )
+            adv_sym = resolve_ticker(custom_input) if custom_input.strip() else "RELIANCE.NS"
     with col_horizon:
+        st.markdown("<div style='height: 38px;'></div>", unsafe_allow_html=True)
         h_option = st.selectbox(
             "Your Trading Goal / Horizon:",
             ["Intraday (Today Only)", "Swing (3-7 Days)", "Positional (2-4 Weeks)", "Long-Term Investment"],
@@ -40,7 +58,7 @@ def render_stock_advisor_tab(broker_instance, is_simple_mode: bool = False):
             key="adv_horizon_select_main"
         )
     with col_btn:
-        st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height: 66px;'></div>", unsafe_allow_html=True)
         analyze_clicked = st.button("🔍 Analyze Stock", type="primary", use_container_width=True, key="adv_analyze_btn_main")
         
     h_map = {

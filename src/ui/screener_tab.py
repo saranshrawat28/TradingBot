@@ -20,7 +20,7 @@ def render_screener_tab(broker_instance):
     with sc1:
         screener_sector = st.selectbox(
             "Filter Sector:",
-            ["All Sectors", "Banking", "IT & Tech", "Power & Energy", "Automobile", "Defence & Aerospace", "Railways", "FMCG", "Metals & Mining", "Healthcare & Pharma"]
+            ["All Sectors", "New Listings & IPOs", "Banking", "IT & Tech", "Power & Energy", "Automobile", "Defence & Aerospace", "Railways", "FMCG", "Metals & Mining", "Healthcare & Pharma"]
         )
     with sc2:
         screener_tf = st.selectbox("Scan Timeframe:", ["15m (Short-Term)", "1h (Intraday/Swing)", "1d (Daily Trend)"], index=1)

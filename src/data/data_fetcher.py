@@ -88,7 +88,24 @@ TICKER_ALIASES = {
     "IRFC": "IRFC.NS",
     "RVNL": "RVNL.NS",
     "IRCTC": "IRCTC.NS",
-    "JIOFIN": "JIOFIN.NS"
+    "JIOFIN": "JIOFIN.NS",
+    "SWIGGY": "SWIGGY.NS",
+    "HYUNDAI": "HYUNDAI.NS",
+    "BAJAJHFL": "BAJAJHFL.NS",
+    "BAJAJ HOUSING": "BAJAJHFL.NS",
+    "WAAREE": "WAAREEENER.NS",
+    "WAAREEENER": "WAAREEENER.NS",
+    "PREMIER": "PREMIERENE.NS",
+    "PREMIERENE": "PREMIERENE.NS",
+    "NTPCGREEN": "NTPCGREEN.NS",
+    "NTPC GREEN": "NTPCGREEN.NS",
+    "TATATECH": "TATATECH.NS",
+    "TATA TECH": "TATATECH.NS",
+    "IREDA": "IREDA.NS",
+    "OLA": "OLAELC.NS",
+    "OLAELC": "OLAELC.NS",
+    "MANKIND": "MANKIND.NS",
+    "KAYNES": "KAYNES.NS"
 }
 
 def parse_option_symbol(symbol: str) -> Optional[dict]:

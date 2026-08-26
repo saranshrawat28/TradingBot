@@ -122,6 +122,19 @@ DEFAULT_WATCHLIST = [
     {"symbol": "ADANIENT.NS", "name": "Adani Enterprises", "category": "Conglomerate"},
     {"symbol": "ADANIPORTS.NS", "name": "Adani Ports & SEZ", "category": "Ports & Logistics"},
     {"symbol": "DLF.NS", "name": "DLF Ltd", "category": "Real Estate"},
+    
+    # New Listings, Recent IPOs & High-Growth Momentum
+    {"symbol": "SWIGGY.NS", "name": "Swiggy Ltd", "category": "New Listings & IPOs"},
+    {"symbol": "HYUNDAI.NS", "name": "Hyundai Motor India", "category": "New Listings & IPOs"},
+    {"symbol": "BAJAJHFL.NS", "name": "Bajaj Housing Finance", "category": "New Listings & IPOs"},
+    {"symbol": "WAAREEENER.NS", "name": "Waaree Energies", "category": "New Listings & IPOs"},
+    {"symbol": "PREMIERENE.NS", "name": "Premier Energies", "category": "New Listings & IPOs"},
+    {"symbol": "NTPCGREEN.NS", "name": "NTPC Green Energy", "category": "New Listings & IPOs"},
+    {"symbol": "TATATECH.NS", "name": "Tata Technologies", "category": "New Listings & IPOs"},
+    {"symbol": "IREDA.NS", "name": "IREDA", "category": "New Listings & IPOs"},
+    {"symbol": "OLAELC.NS", "name": "Ola Electric Mobility", "category": "New Listings & IPOs"},
+    {"symbol": "MANKIND.NS", "name": "Mankind Pharma", "category": "New Listings & IPOs"},
+    {"symbol": "KAYNES.NS", "name": "Kaynes Technology", "category": "New Listings & IPOs"},
 ]
 
 def load_watchlist() -> list[dict]:
