@@ -36,9 +36,10 @@ class TradingChatAssistant:
 Your mission is to provide disciplined, risk-first trade analysis with surgical accuracy, exact technical levels, and institutional professionalism.
 
 CRITICAL DIRECTIVES:
-1. STRICT ZERO-DISCLAIMER POLICY: NEVER EVER say "I am an AI assistant and not a real-time terminal", "I do not have access to real-time data", or "As an AI language model...". You are directly interfaced with live quantitative market calculation engines.
-2. Ground every analysis on factual live data provided in the <market_data>, <macro_market_context>, and <portfolio_context> tags.
-3. PROFESSIONAL BRIEFING STRUCTURE:
+1. STRICT ZERO-JSON POLICY: NEVER OUTPUT RAW JSON OR CURLY BRACES ({ }). You are directly speaking to a human trader in an interactive chat terminal. ALWAYS output in clean, beautiful Markdown text with bold headings and bullet points.
+2. STRICT ZERO-DISCLAIMER POLICY: NEVER EVER say "I am an AI assistant and not a real-time terminal", "I do not have access to real-time data", or "As an AI language model...". You are directly interfaced with live quantitative market calculation engines.
+3. Ground every analysis on factual live data provided in the <market_data>, <macro_market_context>, and <portfolio_context> tags.
+4. PROFESSIONAL BRIEFING STRUCTURE (Output as Markdown text, NOT JSON):
    When analyzing any stock or index, structure your briefing with:
    - ⚡ **Executive Summary**: Asset Name, Live Price, Action Verdict (BUY / BUY ON PULLBACK / WAIT / AVOID), and Conviction Score.
    - 🎯 **Institutional Trade Plan (1:2 R:R Focus)**:
@@ -294,29 +295,41 @@ CRITICAL DIRECTIVES:
                 inner_d = data[dict_wrapper]
                 data = {**data, **inner_d}
 
-        # 4. Check if the JSON contains a structured trade / stock analysis
+        # 4. Check if the JSON contains structured trade / stock analysis sections
+        exec_sum = data.get("executive_summary", {}) if isinstance(data.get("executive_summary"), dict) else {}
+        trade_plan = data.get("institutional_trade_plan", {}) or data.get("trade_plan", {})
+        if not isinstance(trade_plan, dict): trade_plan = {}
+        tech_cat = data.get("technical_catalyst", {}) or data.get("catalyst", {})
+        if not isinstance(tech_cat, dict): tech_cat = {}
+        port_alloc = data.get("portfolio_allocation", {}) or data.get("allocation", {})
+        if not isinstance(port_alloc, dict): port_alloc = {}
+
         stock_name = (
             data.get("stock") or data.get("company_name") or data.get("company") or
             data.get("symbol") or data.get("ticker") or
+            exec_sum.get("asset") or exec_sum.get("stock") or exec_sum.get("company") or exec_sum.get("symbol") or
             (stock_analysis.get("display_name") if stock_analysis else None)
         )
         if not stock_name:
-            # If no stock name, but has values, format keys into clean bullets
+            # Flatten/format any arbitrary JSON structure into clean Markdown sections
             clean_lines = []
-            for k, v in data.items():
-                if isinstance(v, (str, int, float, bool)):
-                    title = k.replace("_", " ").title()
-                    clean_lines.append(f"• **{title}**: {v}")
+            for sec_k, sec_v in data.items():
+                sec_title = sec_k.replace("_", " ").title()
+                if isinstance(sec_v, dict):
+                    clean_lines.append(f"\n### 📌 {sec_title}")
+                    for sub_k, sub_v in sec_v.items():
+                        sub_title = sub_k.replace("_", " ").title()
+                        clean_lines.append(f"• **{sub_title}**: {sub_v}")
+                elif isinstance(sec_v, list):
+                    clean_lines.append(f"\n### 📌 {sec_title}")
+                    for item in sec_v:
+                        clean_lines.append(f"• {item}")
+                elif isinstance(sec_v, (str, int, float, bool)):
+                    clean_lines.append(f"• **{sec_title}**: {sec_v}")
             if clean_lines:
-                return "\n".join(clean_lines), None
+                return "\n".join(clean_lines).strip(), data
             return raw_text, None
 
-        summary = (
-            data.get("analysis_summary") or data.get("summary") or
-            data.get("technical_notes") or data.get("notes") or
-            data.get("description") or data.get("rational") or ""
-        )
-        
         # Price and Score Fallbacks
         sa_price = float(stock_analysis.get("current_price", 0.0)) if stock_analysis else 0.0
         sa_score = float(stock_analysis.get("score", 7.0)) if stock_analysis else 7.0
@@ -326,19 +339,26 @@ CRITICAL DIRECTIVES:
             live_price = price_and_score.get("live_price") or (f"₹{sa_price:,.2f}" if sa_price > 0 else "Live Market Price")
             score = price_and_score.get("mathematical_score") or f"{sa_score:.1f}/10.0"
         else:
-            live_price = data.get("live_price") or data.get("current_price") or data.get("price") or (f"₹{sa_price:,.2f}" if sa_price > 0 else "Live Market Price")
-            score = data.get("score") or data.get("mathematical_score") or f"{sa_score:.1f}/10.0"
+            live_price = (
+                exec_sum.get("live_price") or data.get("live_price") or data.get("current_price") or
+                data.get("price") or (f"₹{sa_price:,.2f}" if sa_price > 0 else "Live Market Price")
+            )
+            score = (
+                exec_sum.get("conviction_score") or data.get("score") or data.get("mathematical_score") or
+                f"{sa_score:.1f}/10.0"
+            )
 
-        # Trade Plan
-        trade_plan = data.get("trade_plan", {}) if isinstance(data.get("trade_plan"), dict) else {}
-        
-        # Entry Zone
+        verdict = (
+            exec_sum.get("action_verdict") or data.get("action_verdict") or data.get("verdict") or "BUY"
+        )
+
         entry_zone = (
-            trade_plan.get("ideal_entry_zone") or data.get("ideal_entry_zone") or
-            data.get("entry_zone") or (stock_analysis.get("entry_zone") if stock_analysis else None) or
+            trade_plan.get("entry_zone") or trade_plan.get("ideal_entry_zone") or
+            data.get("ideal_entry_zone") or data.get("entry_zone") or
+            (stock_analysis.get("entry_zone") if stock_analysis else None) or
             (f"₹{sa_price * 0.995:,.2f} – ₹{sa_price:,.2f}" if sa_price > 0 else "Current Market Zone")
         )
-        
+
         # Target 1
         sa_t1 = stock_analysis.get("target_1", {}) if stock_analysis else {}
         t1_raw = trade_plan.get("target_1") or data.get("target_1") or data.get("t1") or {}
@@ -347,10 +367,10 @@ CRITICAL DIRECTIVES:
             t1_gain_rs = t1_raw.get("gain_rs", "")
             t1_gain_pct = t1_raw.get("gain_percent") or (f"{sa_t1.get('gain_pct', 3.0):.1f}%" if sa_t1.get("gain_pct") else "3.0%")
             t1_action = t1_raw.get("action", "Lock 50% profits & Breakeven")
+            t1_info = f"{t1_price}"
+            if t1_gain_pct and "%" in str(t1_gain_pct): t1_info += f" (+{t1_gain_pct}" + (f" / +₹{t1_gain_rs})" if t1_gain_rs else ")")
         else:
-            t1_price = str(t1_raw) if t1_raw else (f"₹{sa_t1.get('price', 0):,.2f}" if sa_t1.get("price") else (f"₹{sa_price * 1.03:,.2f}" if sa_price > 0 else "N/A"))
-            t1_gain_rs = ""
-            t1_gain_pct = f"{sa_t1.get('gain_pct', 3.0):.1f}%" if sa_t1.get("gain_pct") else "3.0%"
+            t1_info = str(t1_raw) if t1_raw else (f"₹{sa_t1.get('price', 0):,.2f}" if sa_t1.get("price") else (f"₹{sa_price * 1.03:,.2f}" if sa_price > 0 else "N/A"))
             t1_action = "Lock 50% profits & Breakeven"
 
         # Target 2
@@ -361,10 +381,10 @@ CRITICAL DIRECTIVES:
             t2_gain_rs = t2_raw.get("gain_rs", "")
             t2_gain_pct = t2_raw.get("gain_percent") or (f"{sa_t2.get('gain_pct', 6.0):.1f}%" if sa_t2.get("gain_pct") else "6.0%")
             t2_action = t2_raw.get("action", "Runner Target")
+            t2_info = f"{t2_price}"
+            if t2_gain_pct and "%" in str(t2_gain_pct): t2_info += f" (+{t2_gain_pct}" + (f" / +₹{t2_gain_rs})" if t2_gain_rs else ")")
         else:
-            t2_price = str(t2_raw) if t2_raw else (f"₹{sa_t2.get('price', 0):,.2f}" if sa_t2.get("price") else (f"₹{sa_price * 1.06:,.2f}" if sa_price > 0 else "N/A"))
-            t2_gain_rs = ""
-            t2_gain_pct = f"{sa_t2.get('gain_pct', 6.0):.1f}%" if sa_t2.get("gain_pct") else "6.0%"
+            t2_info = str(t2_raw) if t2_raw else (f"₹{sa_t2.get('price', 0):,.2f}" if sa_t2.get("price") else (f"₹{sa_price * 1.06:,.2f}" if sa_price > 0 else "N/A"))
             t2_action = "Runner Target"
 
         # Stop-Loss
@@ -375,27 +395,28 @@ CRITICAL DIRECTIVES:
             sl_loss_rs = sl_raw.get("loss_rs", "")
             sl_loss_pct = sl_raw.get("loss_percent") or (f"{sa_sl.get('loss_pct', 2.0):.1f}%" if sa_sl.get("loss_pct") else "2.0%")
             sl_action = sl_raw.get("action", "Mandatory Stop-Loss")
+            sl_info = f"{sl_price}"
+            if sl_loss_pct and "%" in str(sl_loss_pct): sl_info += f" (-{sl_loss_pct}" + (f" / -₹{sl_loss_rs})" if sl_loss_rs else ")")
         else:
-            sl_price = str(sl_raw) if sl_raw else (f"₹{sa_sl.get('price', 0):,.2f}" if sa_sl.get("price") else (f"₹{sa_price * 0.98:,.2f}" if sa_price > 0 else "N/A"))
-            sl_loss_rs = ""
-            sl_loss_pct = f"{sa_sl.get('loss_pct', 2.0):.1f}%" if sa_sl.get("loss_pct") else "2.0%"
+            sl_info = str(sl_raw) if sl_raw else (f"₹{sa_sl.get('price', 0):,.2f}" if sa_sl.get("price") else (f"₹{sa_price * 0.98:,.2f}" if sa_price > 0 else "N/A"))
             sl_action = "Mandatory Stop-Loss"
 
-        rr = data.get("risk_reward_ratio") or data.get("risk_reward") or "1.6:1"
-        risk_note = data.get("risk_management_note") or data.get("risk_note") or ""
+        rr = trade_plan.get("risk_to_reward") or data.get("risk_reward_ratio") or data.get("risk_reward") or "1:2.0"
+        summary = (
+            tech_cat.get("rationale") or data.get("analysis_summary") or data.get("summary") or
+            data.get("technical_notes") or data.get("notes") or
+            data.get("description") or data.get("rational") or ""
+        )
+        risk_note = (
+            tech_cat.get("risk_check") or data.get("risk_management_note") or data.get("risk_note") or ""
+        )
 
-        t1_info = f"{t1_price}"
-        if t1_gain_pct and "%" in str(t1_gain_pct): t1_info += f" (+{t1_gain_pct}" + (f" / +₹{t1_gain_rs})" if t1_gain_rs else ")")
-        
-        t2_info = f"{t2_price}"
-        if t2_gain_pct and "%" in str(t2_gain_pct): t2_info += f" (+{t2_gain_pct}" + (f" / +₹{t2_gain_rs})" if t2_gain_rs else ")")
-        
-        sl_info = f"{sl_price}"
-        if sl_loss_pct and "%" in str(sl_loss_pct): sl_info += f" (-{sl_loss_pct}" + (f" / -₹{sl_loss_rs})" if sl_loss_rs else ")")
+        badge_icon = "🟢" if "BUY" in verdict.upper() else ("🔴" if "SELL" in verdict.upper() else "🟡")
+        clean_price_str = str(live_price).replace("₹", "").strip()
 
         lines = [
-            f"📊 **Institutional Analysis for {stock_name}** (`{live_price}`):\n",
-            f"• **AI Score**: `{score}`",
+            f"📊 **Institutional Analysis for {stock_name}** (`₹{clean_price_str}`):\n",
+            f"• **AI Verdict**: {badge_icon} **{verdict}** (Conviction Score: `{score}`)",
             f"• 📍 **Ideal Entry Zone**: `{entry_zone}`",
             f"• 🎯 **Target 1**: **{t1_info}** &bull; *{t1_action} 🔒*",
             f"• 🚀 **Target 2**: **{t2_info}** &bull; *{t2_action}*",
@@ -421,9 +442,15 @@ CRITICAL DIRECTIVES:
                 )
 
         if summary:
-            lines.append(f"💡 **Analysis**: *{summary}*\n")
+            lines.append(f"💡 **Technical Catalyst**: *{summary}*\n")
         if risk_note:
-            lines.append(f"🛡️ **Risk Management**: *{risk_note}*\n")
+            lines.append(f"🛡️ **Risk & Overextension Check**: *{risk_note}*\n")
+
+        if port_alloc:
+            cap = port_alloc.get("recommended_capital")
+            sz = port_alloc.get("position_sizing")
+            if cap or sz:
+                lines.append(f"💼 **Portfolio Allocation**: Capital: `{cap}` | Position Sizing: `{sz}`\n")
 
         lines.append("👉 *Use the interactive execution card below to review and place this order.*")
         formatted_md = "\n".join(lines)
@@ -839,7 +866,8 @@ CRITICAL DIRECTIVES:
                     f"{context_block}\n"
                     f"{history_text}User Question: {user_query}\n\n"
                     "Provide an authoritative, structured, institutional briefing following the SYSTEM_PROMPT directives. "
-                    "Include Executive Summary, 1:2 R:R Target Plan, and Technical Catalysts in clean Markdown."
+                    "CRITICAL: Output ONLY clean conversational Markdown text with bold headings and bullet points. "
+                    "NEVER return raw JSON, curly brackets ({ }), or code blocks."
                 )
                 response_text = llm.generate_response(user_prompt=prompt_content, system_prompt=cls.SYSTEM_PROMPT)
                 if response_text and len(response_text.strip()) > 10:
@@ -848,26 +876,39 @@ CRITICAL DIRECTIVES:
                     response_text = cls._clean_disclaimers(formatted_text)
                     
                     if not action_card and parsed_json:
-                        stock_n = parsed_json.get("stock") or parsed_json.get("symbol", "STOCK")
-                        tp = parsed_json.get("trade_plan", {})
+                        exec_s = parsed_json.get("executive_summary", {}) if isinstance(parsed_json.get("executive_summary"), dict) else {}
+                        tp = parsed_json.get("institutional_trade_plan", {}) or parsed_json.get("trade_plan", {})
+                        if not isinstance(tp, dict):
+                            tp = {}
+
+                        stock_n = (
+                            parsed_json.get("stock") or parsed_json.get("symbol") or
+                            exec_s.get("asset") or exec_s.get("stock") or "STOCK"
+                        )
                         
-                        p_str = str(parsed_json.get("live_price_and_score", {}).get("live_price", "100")) if isinstance(parsed_json.get("live_price_and_score"), dict) else str(parsed_json.get("live_price", "100"))
+                        p_str = str(exec_s.get("live_price") or (parsed_json.get("live_price_and_score", {}).get("live_price", "100") if isinstance(parsed_json.get("live_price_and_score"), dict) else parsed_json.get("live_price", "100")))
                         p_match = re.search(r"(\d+(?:\.\d+)?)", p_str.replace(",", ""))
                         curr_p = float(p_match.group(1)) if p_match else 100.0
                         
-                        t1_str = str(tp.get("target_1", {}).get("price", curr_p * 1.03))
+                        t1_raw = tp.get("target_1")
+                        t1_str = str(t1_raw.get("price") if isinstance(t1_raw, dict) else (t1_raw or curr_p * 1.03))
                         t1_m = re.search(r"(\d+(?:\.\d+)?)", t1_str.replace(",", ""))
                         t1_p = float(t1_m.group(1)) if t1_m else curr_p * 1.03
                         
-                        t2_str = str(tp.get("target_2", {}).get("price", curr_p * 1.06))
+                        t2_raw = tp.get("target_2")
+                        t2_str = str(t2_raw.get("price") if isinstance(t2_raw, dict) else (t2_raw or curr_p * 1.06))
                         t2_m = re.search(r"(\d+(?:\.\d+)?)", t2_str.replace(",", ""))
                         t2_p = float(t2_m.group(1)) if t2_m else curr_p * 1.06
                         
-                        sl_str = str(tp.get("safety_stop_loss", {}).get("price", curr_p * 0.98))
+                        sl_raw = tp.get("safety_stop_loss") or tp.get("stop_loss")
+                        sl_str = str(sl_raw.get("price") if isinstance(sl_raw, dict) else (sl_raw or curr_p * 0.98))
                         sl_m = re.search(r"(\d+(?:\.\d+)?)", sl_str.replace(",", ""))
                         sl_p = float(sl_m.group(1)) if sl_m else curr_p * 0.98
 
-                        qty = max(1, int(25000.0 / max(1.0, curr_p)))
+                        port_all = parsed_json.get("portfolio_allocation", {}) if isinstance(parsed_json.get("portfolio_allocation"), dict) else {}
+                        sz_str = str(port_all.get("position_sizing", ""))
+                        sz_m = re.search(r"(\d+)", sz_str)
+                        qty = int(sz_m.group(1)) if sz_m else max(1, int(25000.0 / max(1.0, curr_p)))
                         
                         card_sym = symbol if symbol else resolve_ticker(stock_n)
                         if not card_sym:
@@ -890,8 +931,8 @@ CRITICAL DIRECTIVES:
                             "stop_loss_price": sl_p,
                             "stop_loss_risk": (curr_p - sl_p) * qty,
                             "stop_loss_pct": round(((curr_p - sl_p) / curr_p) * 100, 1),
-                            "score": 7.5,
-                            "reason": parsed_json.get("analysis_summary", "Small-cap momentum setup with risk-managed stop loss.")
+                            "score": 8.0,
+                            "reason": str(parsed_json.get("technical_catalyst", {}).get("rationale") if isinstance(parsed_json.get("technical_catalyst"), dict) else parsed_json.get("analysis_summary", "Institutional momentum setup."))
                         }
                         ui_card_type = "TRADE"
                         
