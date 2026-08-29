@@ -277,5 +277,26 @@ class TestPaperLabSuite(unittest.TestCase):
         self.assertEqual(diag["rsi_fail_pct"], 100.0)
         self.assertIsNotNone(report["sample_warning"])
 
+    @classmethod
+    def tearDownClass(cls):
+        """Clean up all synthetic test artifacts from DB and storage."""
+        import sqlite3, os, glob
+        try:
+            conn = sqlite3.connect('storage/paper_lab.db')
+            c = conn.cursor()
+            c.execute("DELETE FROM paper_picks WHERE symbol LIKE 'TEST_%' OR symbol LIKE 'DIAG_%'")
+            c.execute("DELETE FROM paper_outcomes WHERE symbol LIKE 'TEST_%' OR symbol LIKE 'DIAG_%'")
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+        # Remove any synthetic report files generated during test
+        for p in glob.glob('storage/paper_lab_reports/*2026-09-05*'):
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+
 if __name__ == "__main__":
     unittest.main()

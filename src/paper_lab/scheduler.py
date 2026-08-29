@@ -85,11 +85,11 @@ def run_scheduler_loop():
     """
     print("=" * 70)
     print(f"ApexTrade Paper Trading Accuracy Lab Scheduler Started ({LabConfig.CONFIG_VERSION})")
-    print(f"• 08:50 AM IST: Pre-Market Signal Generation")
-    print(f"• 09:15 AM IST: Market Open Fill Confirmation")
-    print(f"• Every 30 Mins: Live Intraday Telemetry Tracking")
-    print(f"• 03:35 PM IST: Chronological 1m/5m Candle Replay Resolution")
-    print(f"• Friday 05:00 PM: Weekly Accuracy Audit & Diagnostic Report")
+    print(f"* 08:50 AM IST: Pre-Market Signal Generation")
+    print(f"* 09:15 AM IST: Market Open Fill Confirmation")
+    print(f"* Every 30 Mins: Live Intraday Telemetry Tracking")
+    print(f"* 03:35 PM IST: Chronological 1m/5m Candle Replay Resolution")
+    print(f"* Friday 05:00 PM: Weekly Accuracy Audit & Diagnostic Report")
     print("=" * 70)
 
     # Initial startup check & catch-up
