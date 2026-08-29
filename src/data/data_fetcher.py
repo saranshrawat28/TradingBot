@@ -171,9 +171,9 @@ def search_indian_stocks(query: str) -> list[dict]:
     
     # 1. Search local watchlist first for instantaneous match
     q_lower = q.lower()
-    for item in config.DEFAULT_WATCHLIST:
-        if (q_lower in item["name"].lower() or 
-            q_lower in item["symbol"].lower() or 
+    for item in config.load_watchlist():
+        if (q_lower in item.get("name", "").lower() or 
+            q_lower in item.get("symbol", "").lower() or 
             q_lower in item.get("category", "").lower()):
             results.append({
                 "symbol": item["symbol"],
@@ -184,9 +184,8 @@ def search_indian_stocks(query: str) -> list[dict]:
             
     # 2. Query live Yahoo Finance search API for broad NSE/BSE coverage
     try:
-        headers = {'User-Agent': 'Mozilla/5.0'}
         url = f"https://query2.finance.yahoo.com/v1/finance/search?q={requests.utils.quote(q)}&quotesCount=8"
-        resp = requests.get(url, headers=headers, timeout=3.5)
+        resp = _SESSION.get(url, timeout=2.0)
         if resp.status_code == 200:
             data = resp.json()
             for it in data.get("quotes", []):
