@@ -40,14 +40,16 @@ class DailyPicker:
             print(f"[DailyPicker] {len(existing_picks)} picks already exist for {date_str}. Skipping re-generation.")
             return existing_picks
 
-        print(f"[DailyPicker] Scanning {len(LabConfig.UNIVERSE)} stocks for {date_str} Pre-Market Momentum...")
+        print(f"[DailyPicker] Scanning entire market universe ({len(LabConfig.UNIVERSE)} stocks across all sectors) for {date_str} Pre-Market Momentum...")
         candidates = []
 
-        for symbol in LabConfig.UNIVERSE:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def evaluate_single_symbol(symbol: str) -> Optional[Dict[str, Any]]:
             try:
                 analysis = StockAdvisor.analyze_stock(symbol, horizon="intraday")
                 if not analysis or analysis.get("status") == "ERROR":
-                    continue
+                    return None
 
                 score = float(analysis.get("score", 0.0))
                 verdict = analysis.get("verdict", "NEUTRAL").upper()
@@ -56,9 +58,8 @@ class DailyPicker:
                 if score >= LabConfig.MIN_ADVISOR_SCORE and ("BUY" in verdict or "BUY" in action):
                     curr_price = float(analysis.get("current_price", 0.0))
                     if curr_price <= 0:
-                        continue
+                        return None
 
-                    # Extract indicators for signal failure diagnostics
                     metrics = analysis.get("metrics", {})
                     buckets = analysis.get("buckets", {})
                     vwap_info = analysis.get("vwap_structure", {})
@@ -88,7 +89,7 @@ class DailyPicker:
                         "regime": analysis.get("regime", "NORMAL")
                     }
 
-                    candidates.append({
+                    return {
                         "pick_date": date_str,
                         "symbol": symbol,
                         "display_name": display_symbol_name(symbol),
@@ -108,9 +109,16 @@ class DailyPicker:
                         "config_version": LabConfig.CONFIG_VERSION,
                         "data_stale_flag": 0,
                         "status": "PENDING_OPEN"
-                    })
+                    }
             except Exception as e:
-                print(f"[DailyPicker] Error evaluating {symbol}: {e}")
+                return None
+
+        with ThreadPoolExecutor(max_workers=12) as executor:
+            futures = [executor.submit(evaluate_single_symbol, s) for s in LabConfig.UNIVERSE]
+            for future in as_completed(futures):
+                res = future.result()
+                if res:
+                    candidates.append(res)
 
         # 3. Sort by score descending and take Top N
         candidates.sort(key=lambda x: x["advisor_score"], reverse=True)

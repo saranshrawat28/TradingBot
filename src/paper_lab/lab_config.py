@@ -34,52 +34,6 @@ class LabConfig:
     EOD_EVAL_TIME_STR: str = "15:35"
     WEEKLY_REPORT_TIME_STR: str = "17:00"
 
-    # Universe of liquid Indian equities scanned for morning momentum
-    UNIVERSE: List[str] = [
-        "RELIANCE.NS",
-        "TMCV.NS",
-        "INFY.NS",
-        "HDFCBANK.NS",
-        "ICICIBANK.NS",
-        "SBIN.NS",
-        "TCS.NS",
-        "BHARTIARTL.NS",
-        "LT.NS",
-        "ETERNAL.NS",
-        "M&M.NS",
-        "SUNPHARMA.NS",
-        "BAJFINANCE.NS",
-        "AXISBANK.NS",
-        "TITAN.NS",
-        "ITC.NS",
-        "WIPRO.NS",
-        "COALINDIA.NS",
-        "HINDALCO.NS",
-        "TATASTEEL.NS",
-        "TATAPOWER.NS",
-        "ADANIENT.NS",
-        "ADANIPORTS.NS",
-        "JIOFIN.NS",
-        "HAL.NS",
-        "BEL.NS",
-        "IRFC.NS",
-        "RVNL.NS",
-        "SUZLON.NS",
-        "PAYTM.NS",
-        "NTPC.NS",
-        "POWERGRID.NS",
-        "ONGC.NS",
-        "BPCL.NS",
-        "MARUTI.NS",
-        "KOTAKBANK.NS",
-        "VEDL.NS",
-        "DLF.NS",
-        "TRENT.NS",
-        "HDFCLIFE.NS",
-        "SWIGGY.NS",
-        "HYUNDAI.NS",
-        "BAJAJHFL.NS",
-        "WAAREEENER.NS",
-        "TATATECH.NS",
-        "IREDA.NS"
-    ]
+    # Comprehensive universe covering the entire active Indian stock market across all sectors
+    from src.data.market_universe import get_all_market_symbols
+    UNIVERSE: List[str] = get_all_market_symbols()
