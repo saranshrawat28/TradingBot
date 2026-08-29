@@ -15,49 +15,10 @@ from src.data.data_fetcher import get_live_quote, get_historical_data
 from src.engine.stock_advisor import StockAdvisor
 from src.utils.helpers import clean_symbol, display_symbol_name, get_ist_now, format_currency_inr
 
-# High-liquidity, high-momentum Indian stocks for daily pre-market scanning (Expanded Universe)
-DEFAULT_PREMARKET_UNIVERSE = [
-    "RELIANCE.NS",
-    "TMCV.NS",        # Tata Motors
-    "INFY.NS",        # Infosys
-    "HDFCBANK.NS",    # HDFC Bank
-    "ICICIBANK.NS",   # ICICI Bank
-    "SBIN.NS",        # State Bank of India
-    "TCS.NS",         # Tata Consultancy Services
-    "BHARTIARTL.NS",  # Bharti Airtel
-    "LT.NS",          # Larsen & Toubro
-    "ETERNAL.NS",     # Zomato
-    "M&M.NS",         # Mahindra & Mahindra
-    "SUNPHARMA.NS",   # Sun Pharma
-    "BAJFINANCE.NS",  # Bajaj Finance
-    "AXISBANK.NS",    # Axis Bank
-    "TITAN.NS",       # Titan
-    "ITC.NS",         # ITC
-    "WIPRO.NS",       # Wipro
-    "COALINDIA.NS",   # Coal India
-    "HINDALCO.NS",    # Hindalco
-    "TATASTEEL.NS",   # Tata Steel
-    "TATAPOWER.NS",   # Tata Power
-    "ADANIENT.NS",    # Adani Enterprises
-    "ADANIPORTS.NS",  # Adani Ports
-    "JIOFIN.NS",      # Jio Financial
-    "HAL.NS",         # Hindustan Aeronautics
-    "BEL.NS",         # Bharat Electronics
-    "IRFC.NS",        # Indian Railway Finance
-    "RVNL.NS",        # Rail Vikas Nigam
-    "SUZLON.NS",      # Suzlon Energy
-    "PAYTM.NS",       # Paytm
-    "NTPC.NS",        # NTPC
-    "POWERGRID.NS",   # Power Grid
-    "ONGC.NS",        # ONGC
-    "BPCL.NS",        # BPCL
-    "MARUTI.NS",      # Maruti Suzuki
-    "KOTAKBANK.NS",   # Kotak Bank
-    "VEDL.NS",        # Vedanta
-    "DLF.NS",         # DLF
-    "TRENT.NS",       # Trent
-    "HDFCLIFE.NS"     # HDFC Life
-]
+from src.data.market_universe import get_all_market_symbols
+
+# Comprehensive broad Indian stock market universe (all sectors & new IPOs)
+DEFAULT_PREMARKET_UNIVERSE = get_all_market_symbols()
 
 class PreMarketAnalyzer:
     """
@@ -281,11 +242,13 @@ class PreMarketAnalyzer:
         sent_val = str(opening_info.get("sentiment") or opening_info.get("title") or "NEUTRAL").upper()
         index_trend = "BULLISH" if "BULLISH" in sent_val else ("BEARISH" if "BEARISH" in sent_val else "NEUTRAL")
 
-        for sym in symbols:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        def process_premarket_symbol(sym: str) -> Optional[Dict[str, Any]]:
             try:
                 df = get_historical_data(sym, period="5d", interval="5m")
                 if df.empty or len(df) < 25:
-                    continue
+                    return None
 
                 quote = get_live_quote(sym)
                 curr_p = float(quote.get("price", df["Close"].iloc[-1]))
@@ -294,28 +257,12 @@ class PreMarketAnalyzer:
 
                 analysis = StockAdvisor.evaluate_df_slice(df, symbol=sym, horizon="intraday", index_trend=index_trend)
                 score = float(analysis.get("score", 5.0))
-                verdict = analysis.get("verdict", "WAIT")
                 t1 = analysis.get("target_1", {})
                 t2 = analysis.get("target_2", {})
                 sl = analysis.get("stop_loss", {})
-                levels = analysis.get("levels", {})
 
                 disp_name = display_symbol_name(sym)
 
-                # Track Gap Ups / Gap Downs
-                item_summary = {
-                    "symbol": sym,
-                    "name": disp_name,
-                    "price": curr_p,
-                    "gap_pct": gap_pct,
-                    "score": score
-                }
-                if gap_pct >= 0.8:
-                    gap_ups.append(item_summary)
-                elif gap_pct <= -0.8:
-                    gap_downs.append(item_summary)
-
-                # Formulate Plain-English Reasons
                 setup_grade = analysis.get("setup_grade", "GRADE_A")
                 setup_grade_title = analysis.get("setup_grade_title", "⚡ GRADE A (High Probability)")
                 win_prob = analysis.get("win_probability", 70)
@@ -350,7 +297,7 @@ class PreMarketAnalyzer:
                 t1_gain_pct = round(((t1_p - curr_p) / curr_p) * 100.0, 2)
                 sl_loss_pct = round(((curr_p - sl_p) / curr_p) * 100.0, 2)
 
-                scanned_items.append({
+                return {
                     "symbol": sym,
                     "display_name": disp_name,
                     "current_price": curr_p,
@@ -375,10 +322,20 @@ class PreMarketAnalyzer:
                     "reason": reason_text,
                     "pros": analysis.get("pros", [])[:2],
                     "watchouts": analysis.get("watchouts", [])[:1]
-                })
-
+                }
             except Exception:
-                continue
+                return None
+
+        with ThreadPoolExecutor(max_workers=12) as executor:
+            futures = [executor.submit(process_premarket_symbol, s) for s in symbols]
+            for future in as_completed(futures):
+                item = future.result()
+                if item:
+                    scanned_items.append(item)
+                    if item["gap_pct"] >= 0.8:
+                        gap_ups.append({"symbol": item["symbol"], "name": item["display_name"], "price": item["current_price"], "gap_pct": item["gap_pct"], "score": item["score"]})
+                    elif item["gap_pct"] <= -0.8:
+                        gap_downs.append({"symbol": item["symbol"], "name": item["display_name"], "price": item["current_price"], "gap_pct": item["gap_pct"], "score": item["score"]})
 
         # Sort scanned items by win probability and mathematical score (highest quality first)
         scanned_items.sort(key=lambda x: (x.get("win_probability", 50), x["score"]), reverse=True)

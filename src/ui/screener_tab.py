@@ -28,9 +28,9 @@ def render_screener_tab(broker_instance):
         
     if st.button("🚀 Run Live Market Scan", type="primary", use_container_width=True):
         with st.spinner("Scanning companies and calculating buy/sell signals..."):
-            stock_pool = config.DEFAULT_WATCHLIST
+            stock_pool = config.load_watchlist()
             if screener_sector != "All Sectors":
-                stock_pool = [i for i in stock_pool if screener_sector.lower() in i["category"].lower()]
+                stock_pool = [i for i in stock_pool if screener_sector.lower() in i.get("category", "").lower()]
                 
             screener_rows = []
             for item in stock_pool:
