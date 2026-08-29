@@ -55,6 +55,7 @@ def print_status():
 
 def main():
     parser = argparse.ArgumentParser(description="ApexTrade Paper Trading Accuracy Lab CLI")
+    parser.add_argument("--run-scheduler", action="store_true", help="Start continuous 24/7 background scheduler loop")
     parser.add_argument("--pick-now", action="store_true", help="Generate Top 5 picks and confirm open fills immediately")
     parser.add_argument("--force", action="store_true", help="Force pick generation even on weekends/holidays (for manual testing)")
     parser.add_argument("--evaluate-now", action="store_true", help="Run chronological candle replay outcome resolution")
