@@ -22,7 +22,8 @@ from src.ui import (
     render_screener_tab,
     render_portfolio_tab,
     render_settings_tab,
-    render_quant_research_tab
+    render_quant_research_tab,
+    render_paper_lab_tab
 )
 
 # -------------------------------------------------------------
@@ -71,6 +72,9 @@ if active_tab == "🗣️ Talk to Your AI Bot (Chat & Voice)":
 
 elif active_tab == "🌅 Pre-Market & Best Stocks Today":
     render_pre_market_tab(broker)
+
+elif active_tab == "🧪 Paper Lab & Accuracy Benchmark":
+    render_paper_lab_tab(broker)
 
 elif active_tab in ["🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)", "🤖 AI Auto-Pilot (Automated Safe Trading)"]:
     render_autonomous_tab(broker)

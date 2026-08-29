@@ -13,7 +13,9 @@ secrets.toml
 # Local Data Cache & Logs
 data_cache/
 storage/*.json
+storage/*.txt
 storage/*.db
+storage/paper_lab_reports/
 *.db
 logs/
 *.log

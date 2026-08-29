@@ -245,6 +245,7 @@ def render_sidebar_navigation(broker):
         nav_options = [
             "🗣️ Talk to Your AI Bot (Chat & Voice)",
             "🌅 Pre-Market & Best Stocks Today",
+            "🧪 Paper Lab & Accuracy Benchmark",
             "🎯 Easy Stock Advisor (Buy / Sell Advice)",
             "🤖 AI Auto-Pilot (Automated Safe Trading)",
             "📦 My Trades & Profit Book",
@@ -254,6 +255,7 @@ def render_sidebar_navigation(broker):
         nav_options = [
             "🗣️ Talk to Your AI Bot (Chat & Voice)",
             "🌅 Pre-Market & Best Stocks Today",
+            "🧪 Paper Lab & Accuracy Benchmark",
             "🤖 Autonomous AI Trading Agent (Claude / Kimi / F&O)",
             "🔬 Systematic Quant Research Lab",
             "⚡ NFO Options Greeks & OI Matrix",

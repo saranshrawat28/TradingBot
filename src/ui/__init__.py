@@ -14,6 +14,7 @@ from src.ui.screener_tab import render_screener_tab
 from src.ui.portfolio_tab import render_portfolio_tab
 from src.ui.settings_tab import render_settings_tab
 from src.ui.research_tab import render_quant_research_tab
+from src.ui.paper_lab_tab import render_paper_lab_tab
 
 __all__ = [
     "inject_terminal_css",
@@ -30,5 +31,6 @@ __all__ = [
     "render_screener_tab",
     "render_portfolio_tab",
     "render_settings_tab",
-    "render_quant_research_tab"
+    "render_quant_research_tab",
+    "render_paper_lab_tab"
 ]
