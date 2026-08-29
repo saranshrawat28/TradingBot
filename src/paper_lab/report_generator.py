@@ -163,10 +163,15 @@ class ReportGenerator:
         if is_low_sample:
             sample_warning = f"⚠️ PRELIMINARY DATA: Total sample size is small ({total_picks} total trades, {loss_count} losses). Treat diagnostic percentages as directional trends rather than definitive statistical proof. Continue paper testing for 2–4 full weeks."
 
-        # 5. Top Winners & Worst Losers
-        sorted_by_pnl = sorted(records, key=lambda x: float(x.get("pnl_rs", 0.0)), reverse=True)
-        top_winners = sorted_by_pnl[:5]
-        worst_losers = sorted(records, key=lambda x: float(x.get("pnl_rs", 0.0)))[:5]
+        # Filter out any synthetic test artifacts
+        real_records = [r for r in records if not r.get("symbol", "").startswith(("TEST_", "DIAG_"))]
+        if not real_records:
+            real_records = records
+
+        # 5. Top Winners & Worst Losers (Strictly positive for winners, strictly negative for losers)
+        sorted_by_pnl = sorted(real_records, key=lambda x: float(x.get("pnl_rs", 0.0)), reverse=True)
+        top_winners = [r for r in sorted_by_pnl if float(r.get("pnl_rs", 0.0)) > 0][:5]
+        worst_losers = [r for r in sorted(real_records, key=lambda x: float(x.get("pnl_rs", 0.0))) if float(r.get("pnl_rs", 0.0)) < 0][:5]
 
         # 6. Assemble Full Structured Report
         report_data = {
@@ -231,14 +236,14 @@ class ReportGenerator:
         md_lines.extend([
             "## 📊 Financial & Performance Summary",
             f"• **Total Notional Capital Deployed**: `{format_currency_inr(total_notional)}` (₹20,000 flat per trade)",
-            f"• **Net Realized P&L**: **{'+' if total_pnl >= 0 else ''}{format_currency_inr(total_pnl)}** (`{net_return_pct:+.2f}%` on capital)",
+            f"• **Net Realized P&L**: **{'+' if total_pnl > 0 else ''}{format_currency_inr(total_pnl)}** (`{net_return_pct:+.2f}%` on capital)",
             f"• **Profit Factor**: `{profit_factor:.2f}` (Total Gains: `{format_currency_inr(total_gains)}` | Total Losses: `{format_currency_inr(total_losses)}`)",
             f"• **Avg Win / Avg Loss**: `{format_currency_inr(avg_win)}` / `-{format_currency_inr(avg_loss)}`\n",
             "## 🎯 Recommendation Accuracy Breakdown",
             f"• **Total Stock Recommendations**: `{total_picks}`",
             f"• ✅ **Winning Trades (Hit Target 1 / 2)**: `{win_count}` (`{win_rate}%`)",
             f"• ❌ **Stopped Out (Hit Stop-Loss)**: `{loss_count}` (`{loss_rate}%`)",
-            f"• ↩️ **EOD Timeouts (Closed at 3:25 PM)**: `{len(eod_closes)}` (`{round(len(eod_closes)/total_picks*100, 1)}%`)",
+            f"• ↩️ **EOD Timeouts (Closed at 3:25 PM)**: `{len(eod_closes)}` (`{round(len(eod_closes)/total_picks*100, 1) if total_picks else 0.0}%`)",
             f"• 🎯 **Target 1 Hits**: `{len(t1_hits)}` | 🚀 **Target 2 Hits**: `{len(t2_hits)}` | 🛑 **SL Hits**: `{len(sl_hits)}`\n",
             "## 🔬 Signal Lag Diagnostics (Where the Recommender Failed)",
             f"*Analyzed all `{loss_count}` losing trade setups to identify recurring failure patterns:*\n",
@@ -253,13 +258,23 @@ class ReportGenerator:
             md_lines.append(f"• {rec}")
 
         md_lines.append("\n## 🏆 Best & Worst Recommendations")
-        md_lines.append("### 🌟 Top 5 Winners")
-        for i, w in enumerate(top_winners, 1):
-            md_lines.append(f"{i}. **{w['symbol']}** ({w['pick_date']}): `{w['exit_type']}` @ `₹{w['exit_price']:,.2f}` | P&L: **+{format_currency_inr(w['pnl_rs'])}** (`+{w['pnl_pct']:.2f}%`)")
+        md_lines.append("### 🌟 Top Winners")
+        if top_winners:
+            for i, w in enumerate(top_winners, 1):
+                pnl_val = float(w.get('pnl_rs', 0.0))
+                pnl_pct_val = float(w.get('pnl_pct', 0.0))
+                md_lines.append(f"{i}. **{w['symbol']}** ({w['pick_date']}): `{w['exit_type']}` @ `₹{w['exit_price']:,.2f}` | P&L: **+{format_currency_inr(pnl_val)}** (`+{pnl_pct_val:.2f}%`)")
+        else:
+            md_lines.append("• *No winning target hits recorded in this period (trades either hit SL or timed out at 3:25 PM EOD).*")
 
-        md_lines.append("\n### 📉 Bottom 5 Losers")
-        for i, l in enumerate(worst_losers, 1):
-            md_lines.append(f"{i}. **{l['symbol']}** ({l['pick_date']}): `{l['exit_type']}` @ `₹{l['exit_price']:,.2f}` | P&L: **{format_currency_inr(l['pnl_rs'])}** (`{l['pnl_pct']:.2f}%`)")
+        md_lines.append("\n### 📉 Worst Losers")
+        if worst_losers:
+            for i, l in enumerate(worst_losers, 1):
+                pnl_val = float(l.get('pnl_rs', 0.0))
+                pnl_pct_val = float(l.get('pnl_pct', 0.0))
+                md_lines.append(f"{i}. **{l['symbol']}** ({l['pick_date']}): `{l['exit_type']}` @ `₹{l['exit_price']:,.2f}` | P&L: **{format_currency_inr(pnl_val)}** (`{pnl_pct_val:.2f}%`)")
+        else:
+            md_lines.append("• *No losing trades recorded in this period (100% win rate).*")
 
         markdown_text = "\n".join(md_lines)
         report_data["markdown_text"] = markdown_text
