@@ -209,6 +209,9 @@ class PreMarketAnalyzer:
             badge_color = "#f59e0b"
             explanation = f"NIFTY 50 is opening flat ({gap_pct:+.2f}%). Market is consolidating. Focus on stock-specific breakouts rather than index direction."
 
+        from src.data.nse_bse_connector import NSEBSEConnector
+        nse_direct = NSEBSEConnector.get_instance().get_official_market_status()
+
         return {
             "sentiment": sentiment,
             "title": title,
@@ -219,8 +222,11 @@ class PreMarketAnalyzer:
             "banknifty_price": float(banknifty_quote.get("price", 51200.0)),
             "vix_level": vix_level,
             "market_phase": market_phase,
-            "phase_description": phase_desc,
-            "timestamp": now_ist.strftime("%I:%M %p IST, %d %b %Y")
+            "phase_desc": phase_desc,
+            "nse_official_status": nse_direct.get("market_status", "Open"),
+            "nse_trade_date": nse_direct.get("trade_date", ""),
+            "data_source": "NSE_DIRECT_OFFICIAL",
+            "timestamp": now_ist.strftime("%d %b %Y | %H:%M:%S IST")
         }
 
     @classmethod
