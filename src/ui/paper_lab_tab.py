@@ -102,7 +102,19 @@ def render_paper_lab_tab(broker_instance=None):
 
     today_picks = PaperDB.get_picks_by_date(today_str)
     if not today_picks:
-        st.info(f"No picks recorded for {today_str} yet. Click **'Run Scan & Fills Now'** above to generate recommendations for today.")
+        st.markdown(f"""
+        <div style='background: #0f172a; border: 1.5px solid #1e293b; border-left: 4px solid #38bdf8; border-radius: 10px; padding: 18px 22px; margin: 10px 0;'>
+            <div style='display: flex; justify-content: space-between; align-items: center;'>
+                <div>
+                    <div style='font-size: 1.05rem; font-weight: 800; color: #f8fafc;'>🚀 Armed & Ready for Monday Market Session (08:50 AM IST)</div>
+                    <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 4px;'>
+                        The 24/7 background scheduler is active. It will automatically scan 200+ Indian stocks at 08:50 AM, fill 5 paper trades at 09:15 AM with ₹1,00,000 dummy capital, and evaluate results at 03:35 PM.
+                    </div>
+                </div>
+                <span style='background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 0.80rem;'>🟢 SCHEDULER ACTIVE</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
     else:
         table_rows = []
         for p in today_picks:

@@ -156,9 +156,13 @@ def get_lot_size(symbol: str) -> int:
         return 700
     return 50
 
-def get_nse_options_expiry_details(now_dt: Optional[datetime] = None) -> dict:
+def get_nse_options_expiry_details(symbol: str = "NIFTY", now_dt: Optional[datetime] = None) -> dict:
     """
-    Calculates upcoming NSE options expiry dates (Weekly Thursday & Monthly Last Thursday).
+    Calculates upcoming NSE options expiry dates:
+    - NIFTY 50 & Equities: Weekly Thursday & Monthly Last Thursday
+    - BANK NIFTY: Weekly Wednesday & Monthly Last Wednesday
+    - FINNIFTY: Weekly Tuesday
+    - MIDCPNIFTY: Weekly Monday
     """
     from datetime import date
     import calendar
@@ -166,54 +170,64 @@ def get_nse_options_expiry_details(now_dt: Optional[datetime] = None) -> dict:
     now = now_dt or get_ist_now()
     now_date = now.date() if isinstance(now, datetime) else now
     
-    # 1. Find Current and Next Thursday (weekday 3)
-    days_to_current_thu = (3 - now_date.weekday()) % 7
-    current_thu_date = now_date + timedelta(days=days_to_current_thu)
+    sym_clean = str(symbol).upper()
+    if "BANK" in sym_clean:
+        target_weekday = 2 # Wednesday
+    elif "FIN" in sym_clean:
+        target_weekday = 1 # Tuesday
+    elif "MIDCP" in sym_clean:
+        target_weekday = 0 # Monday
+    else:
+        target_weekday = 3 # Thursday
     
-    # If today is Thursday and after market close (15:30), roll to next week
-    is_today_0dte = (now_date.weekday() == 3)
+    # 1. Find Current and Next Expiry Date for this instrument
+    days_to_current = (target_weekday - now_date.weekday()) % 7
+    current_exp_date = now_date + timedelta(days=days_to_current)
+    
+    # If today is expiry day and after market close (15:30), roll to next week
+    is_today_0dte = (now_date.weekday() == target_weekday)
     if is_today_0dte and hasattr(now, "hour") and (now.hour > 15 or (now.hour == 15 and now.minute >= 30)):
-        current_thu_date = now_date + timedelta(days=7)
-        next_thu_date = current_thu_date + timedelta(days=7)
+        current_exp_date = now_date + timedelta(days=7)
+        next_exp_date = current_exp_date + timedelta(days=7)
         is_today_0dte = False
     else:
-        next_thu_date = current_thu_date + timedelta(days=7)
+        next_exp_date = current_exp_date + timedelta(days=7)
         
-    # 2. Find Last Thursday of Current Month (Monthly Expiry)
+    # 2. Find Last target_weekday of Current Month (Monthly Expiry)
     _, last_day_num = calendar.monthrange(now_date.year, now_date.month)
     month_end_date = date(now_date.year, now_date.month, last_day_num)
-    offset_to_thu = (month_end_date.weekday() - 3) % 7
-    monthly_thu_date = month_end_date - timedelta(days=offset_to_thu)
+    offset_to_weekday = (month_end_date.weekday() - target_weekday) % 7
+    monthly_exp_date = month_end_date - timedelta(days=offset_to_weekday)
     
-    if now_date > monthly_thu_date:
+    if now_date > monthly_exp_date:
         next_m_year = now_date.year if now_date.month < 12 else now_date.year + 1
         next_m_month = now_date.month + 1 if now_date.month < 12 else 1
         _, next_last_day_num = calendar.monthrange(next_m_year, next_m_month)
         next_month_end = date(next_m_year, next_m_month, next_last_day_num)
-        next_offset = (next_month_end.weekday() - 3) % 7
-        monthly_thu_date = next_month_end - timedelta(days=next_offset)
+        next_offset = (next_month_end.weekday() - target_weekday) % 7
+        monthly_exp_date = next_month_end - timedelta(days=next_offset)
         
-    cur_exp_str = current_thu_date.strftime("%d-%b-%Y").upper()
-    cur_exp_tag = current_thu_date.strftime("%d%b%y").upper()
-    next_exp_str = next_thu_date.strftime("%d-%b-%Y").upper()
-    next_exp_tag = next_thu_date.strftime("%d%b%y").upper()
-    monthly_exp_str = monthly_thu_date.strftime("%d-%b-%Y").upper()
-    monthly_exp_tag = monthly_thu_date.strftime("%d%b%y").upper()
+    cur_exp_str = current_exp_date.strftime("%d-%b-%Y").upper()
+    cur_exp_tag = current_exp_date.strftime("%d%b%y").upper()
+    next_exp_str = next_exp_date.strftime("%d-%b-%Y").upper()
+    next_exp_tag = next_exp_date.strftime("%d%b%y").upper()
+    monthly_exp_str = monthly_exp_date.strftime("%d-%b-%Y").upper()
+    monthly_exp_tag = monthly_exp_date.strftime("%d%b%y").upper()
     
     # Target recommendation logic:
     if is_today_0dte and hasattr(now, "hour") and (now.hour > 13 or (now.hour == 13 and now.minute >= 30)):
-        rec_date = next_thu_date
+        rec_date = next_exp_date
         rec_str = f"{next_exp_str} (Next Weekly Expiry)"
         rec_tag = next_exp_tag
         is_rec_0dte = False
     elif is_today_0dte:
-        rec_date = current_thu_date
+        rec_date = current_exp_date
         rec_str = f"{cur_exp_str} (Today 0DTE Expiry)"
         rec_tag = cur_exp_tag
         is_rec_0dte = True
     else:
-        rec_date = current_thu_date
-        is_monthly = (current_thu_date == monthly_thu_date)
+        rec_date = current_exp_date
+        is_monthly = (current_exp_date == monthly_exp_date)
         rec_str = f"{cur_exp_str} ({'Monthly' if is_monthly else 'Weekly'} Expiry)"
         rec_tag = cur_exp_tag
         is_rec_0dte = False
