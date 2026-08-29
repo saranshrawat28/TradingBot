@@ -213,7 +213,11 @@ def render_pre_market_tab(broker_instance):
                                 <span style='background: {opt_badge}22; color: {opt_badge}; border: 1px solid {opt_badge}; padding: 3px 8px; border-radius: 6px; font-weight: 700; font-size: 0.80rem;'>{opt_action}</span>
                             </div>
                             <div style='color: #38bdf8; font-size: 0.82rem; font-weight: 700; margin: 4px 0;'>📅 {expiry_name}</div>
-                            <div style='color: #94a3b8; font-size: 0.76rem; margin-bottom: 8px;'>Broker Symbol: <code style='color: #f8fafc; background: #080b11; padding: 2px 4px; border-radius: 4px;'>{kite_name}</code> &bull; Lot: <strong style='color: #f8fafc;'>{lot_sz} Qty</strong></div>
+                            <div style='background: #0b111e; border: 1px solid #1e293b; border-radius: 6px; padding: 6px 10px; margin: 6px 0 10px 0;'>
+                                <div style='font-size: 0.74rem; color: #94a3b8;'>🔍 <strong>Search in Zerodha Kite / Groww:</strong></div>
+                                <div style='font-size: 0.88rem; font-weight: 800; color: #38bdf8; font-family: "JetBrains Mono", monospace; margin: 2px 0;'>{opt.get('universal_search', opt_sym)}</div>
+                                <div style='font-size: 0.72rem; color: #64748b;'>Broker Code: <code>{kite_name}</code> &bull; Lot: <strong style='color: #f8fafc;'>{lot_sz} shares</strong></div>
+                            </div>
                             <div style='display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px;'>
                                 <div style='font-size: 1.4rem; font-weight: 800; color: #38bdf8; font-family: "JetBrains Mono", monospace;'>₹{entry_prem:.1f} <span style='font-size: 0.80rem; color: #94a3b8;'>Premium</span></div>
                                 <span style='background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; font-weight: 700;'>{win_p}% Win Rate</span>
