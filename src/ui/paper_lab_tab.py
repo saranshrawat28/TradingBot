@@ -38,9 +38,9 @@ def render_paper_lab_tab(broker_instance=None):
     """, unsafe_allow_html=True)
 
     # 1. Action Buttons Control Bar
-    btn_col1, btn_col2, btn_col3, btn_col4 = st.columns([1.5, 1.8, 1.8, 2])
+    btn_col1, btn_col2, btn_col3, btn_col4, btn_col5 = st.columns([1.4, 1.6, 1.6, 1.6, 1.8])
     with btn_col1:
-        if st.button("⚡ Run Scan & Fills Now", use_container_width=True):
+        if st.button("⚡ Run Daily Fills", use_container_width=True):
             with st.spinner("Scanning universe & generating Top 5 picks..."):
                 DailyPicker.run_daily_picker_catchup()
             st.success("Today's picks generated & confirmed!")
@@ -54,13 +54,20 @@ def render_paper_lab_tab(broker_instance=None):
             st.rerun()
 
     with btn_col3:
+        if st.button("📅 Generate Daily Report", use_container_width=True):
+            with st.spinner("Compiling Today's Daily Performance Report..."):
+                ReportGenerator.generate_report(days_lookback=1)
+            st.success("Today's Daily Report generated!")
+            st.rerun()
+
+    with btn_col4:
         if st.button("📝 Generate 7-Day Report", use_container_width=True):
             with st.spinner("Compiling accuracy & diagnostic audit..."):
                 ReportGenerator.generate_report(days_lookback=7)
             st.success("7-Day report generated!")
             st.rerun()
 
-    with btn_col4:
+    with btn_col5:
         if st.button("📊 Generate 28-Day Benchmark", use_container_width=True):
             with st.spinner("Compiling 4-week rolling audit..."):
                 ReportGenerator.generate_report(days_lookback=28)
@@ -69,20 +76,24 @@ def render_paper_lab_tab(broker_instance=None):
 
     st.markdown("<br/>", unsafe_allow_html=True)
 
-    # 2. Cumulative KPI Cards (Past 7 Days)
-    recent_report = ReportGenerator.generate_report(days_lookback=7)
+    # 2. Performance Scope Selector & KPI Cards
+    scope = st.radio("📈 Select Report & Metrics Scope:", ["📅 Today's Daily Returns (1-Day)", "📊 Rolling 7-Day Performance", "🏛️ Rolling 28-Day Benchmark"], horizontal=True)
+    days_lb = 1 if "1-Day" in scope else (28 if "28-Day" in scope else 7)
+    scope_tag = "Today" if days_lb == 1 else f"{days_lb}d"
+
+    recent_report = ReportGenerator.generate_report(days_lookback=days_lb)
     fin = recent_report.get("financial_summary", {})
     acc = recent_report.get("prediction_accuracy", {})
 
     kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
     with kpi1:
         notional = fin.get("total_notional_deployed_rs", 0.0)
-        st.metric("Notional Deployed (7d)", f"₹{notional:,.0f}", f"{acc.get('total_picks', 0)} Picks")
+        st.metric(f"Notional Deployed ({scope_tag})", f"₹{notional:,.0f}", f"{acc.get('total_picks', 0)} Picks")
     with kpi2:
         pnl = fin.get("net_realized_pnl_rs", 0.0)
         ret = fin.get("net_return_pct", 0.0)
         pnl_color = "normal" if pnl >= 0 else "inverse"
-        st.metric("Net Realized P&L (7d)", f"{'+' if pnl>=0 else ''}₹{pnl:,.2f}", f"{ret:+.2f}% on Capital")
+        st.metric(f"Net Realized P&L ({scope_tag})", f"{'+' if pnl>0 else ''}₹{pnl:,.2f}", f"{ret:+.2f}% on Capital")
     with kpi3:
         wr = acc.get("win_rate_pct", 0.0)
         st.metric("Prediction Win Rate", f"{wr:.1f}%", f"{acc.get('winning_picks', 0)} Wins / {acc.get('losing_picks', 0)} Losses")
