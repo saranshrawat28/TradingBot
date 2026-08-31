@@ -313,7 +313,8 @@ class PaperDB:
             cursor = conn.cursor()
             cursor.execute("""
             SELECT
-                p.pick_date, p.symbol, p.display_name, p.advisor_score,
+                p.pick_date, p.symbol, p.display_name, p.advisor_score, p.setup_grade,
+                p.signal_price, p.target_1, p.target_2, p.stop_loss,
                 p.score_breakdown, p.top_signals, p.config_version,
                 p.signal_time, p.entry_time, p.data_stale_flag,
                 o.entry_price, o.exit_price, o.exit_time, o.exit_type,

@@ -221,7 +221,8 @@ class ReportGenerator:
             },
             "recommendations": recommendations,
             "top_winners": top_winners,
-            "worst_losers": worst_losers
+            "worst_losers": worst_losers,
+            "records": real_records
         }
 
         # 7. Generate Clean Markdown Text
@@ -279,9 +280,11 @@ class ReportGenerator:
         markdown_text = "\n".join(md_lines)
         report_data["markdown_text"] = markdown_text
 
-        # 8. Save to storage
+        # 8. Save to storage (TXT, JSON, XLSX, CSV)
         report_file_txt = REPORTS_DIR / f"report_{end_str}_{days_lookback}d.txt"
         report_file_json = REPORTS_DIR / f"report_{end_str}_{days_lookback}d.json"
+        report_file_xlsx = REPORTS_DIR / f"report_{end_str}_{days_lookback}d.xlsx"
+        report_file_csv = REPORTS_DIR / f"report_{end_str}_{days_lookback}d.csv"
 
         with open(report_file_txt, "w", encoding="utf-8") as f:
             f.write(markdown_text)
@@ -290,10 +293,325 @@ class ReportGenerator:
             json.dump(report_data, f, indent=2, default=str)
 
         try:
+            xlsx_bytes = cls.export_report_to_excel_bytes(report_data)
+            with open(report_file_xlsx, "wb") as f:
+                f.write(xlsx_bytes)
+        except Exception as e:
+            pass
+
+        try:
+            csv_text = cls.export_report_to_csv_string(report_data)
+            with open(report_file_csv, "w", encoding="utf-8") as f:
+                f.write(csv_text)
+        except Exception as e:
+            pass
+
+        try:
             print(f"[ReportGenerator] Report successfully generated and saved to {report_file_txt}")
         except Exception:
             pass
         return report_data
+
+    @classmethod
+    def export_report_to_excel_bytes(cls, report_data: Dict[str, Any]) -> bytes:
+        """
+        Exports the report data into a professionally styled, multi-tab Microsoft Excel (.xlsx) workbook.
+        """
+        import io
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+
+        wb = openpyxl.Workbook()
+
+        header_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        title_font = Font(name="Calibri", size=13, bold=True, color="1E3A8A")
+        bold_font = Font(name="Calibri", size=11, bold=True)
+        regular_font = Font(name="Calibri", size=11)
+
+        win_fill = PatternFill(start_color="DCFCE7", end_color="DCFCE7", fill_type="solid")
+        loss_fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")
+        neutral_fill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
+
+        thin_border = Border(
+            left=Side(style='thin', color='CBD5E1'),
+            right=Side(style='thin', color='CBD5E1'),
+            top=Side(style='thin', color='CBD5E1'),
+            bottom=Side(style='thin', color='CBD5E1')
+        )
+        center_align = Alignment(horizontal='center', vertical='center')
+        left_align = Alignment(horizontal='left', vertical='center')
+        right_align = Alignment(horizontal='right', vertical='center')
+
+        # -------------------------------------------------------------
+        # SHEET 1: Session_Trade_Details
+        # -------------------------------------------------------------
+        ws1 = wb.active
+        ws1.title = "Session_Trade_Details"
+        ws1.views.sheetView[0].showGridLines = True
+
+        period_str = f"{report_data.get('period', {}).get('start', '')} to {report_data.get('period', {}).get('end', '')}"
+        ws1["A1"] = f"APEXTRADE ACCURACY LAB - TRADE EXECUTION DETAILS ({period_str})"
+        ws1["A1"].font = title_font
+        ws1.merge_cells("A1:U1")
+        ws1.row_dimensions[1].height = 26
+
+        headers = [
+            "Date", "Symbol", "Company Name", "Quant Score", "Setup Grade",
+            "Signal Time", "Signal Price (₹)", "Entry Time", "Entry Price (₹)",
+            "Target 1 (₹)", "Target 2 (₹)", "Stop-Loss (₹)", "Allocated Capital (₹)",
+            "Quantity", "Outcome Status", "Exit Time", "Exit Price (₹)",
+            "Realized P&L (₹)", "Return (%)", "Bars Held (Mins)", "Key Technical Catalysts"
+        ]
+
+        ws1.append([])
+        ws1.append(headers)
+        ws1.row_dimensions[3].height = 26
+
+        for col_idx, _ in enumerate(headers, 1):
+            cell = ws1.cell(row=3, column=col_idx)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = center_align
+            cell.border = thin_border
+
+        records = report_data.get("records", [])
+        for row_idx, r in enumerate(records, 4):
+            pnl = float(r.get("pnl_rs", 0.0))
+            pnl_pct = float(r.get("pnl_pct", 0.0))
+            ext_type = str(r.get("exit_type", "ACTIVE"))
+            top_sigs = r.get("top_signals", [])
+            sig_str = ", ".join(top_sigs[:2]) if isinstance(top_sigs, list) else str(top_sigs or "")
+
+            row_data = [
+                r.get("pick_date", ""),
+                r.get("symbol", ""),
+                r.get("display_name", r.get("symbol", "")),
+                f"{float(r.get('advisor_score', 0)):.1f}/10",
+                r.get("setup_grade", "GRADE A"),
+                r.get("signal_time", "08:50:00"),
+                float(r.get("signal_price", 0.0)),
+                r.get("entry_time", "09:15:00"),
+                float(r.get("entry_price", 0.0)),
+                float(r.get("target_1", 0.0)),
+                float(r.get("target_2", 0.0)),
+                float(r.get("stop_loss", 0.0)),
+                float(r.get("allocated_capital", 20000.0)),
+                int(r.get("quantity", 1)),
+                ext_type,
+                r.get("exit_time", "15:15:00"),
+                float(r.get("exit_price", 0.0)),
+                pnl,
+                pnl_pct / 100.0,
+                int(r.get("bars_held", 0)),
+                sig_str
+            ]
+            ws1.append(row_data)
+            ws1.row_dimensions[row_idx].height = 22
+
+            for col_idx in range(1, len(headers) + 1):
+                c = ws1.cell(row=row_idx, column=col_idx)
+                c.font = regular_font
+                c.border = thin_border
+
+                if col_idx in [7, 9, 10, 11, 12, 13, 17, 18]:
+                    c.number_format = '₹#,##0.00'
+                    c.alignment = right_align
+                elif col_idx == 14:
+                    c.number_format = '#,##0'
+                    c.alignment = center_align
+                elif col_idx == 19:
+                    c.number_format = '+0.00%;-0.00%;0.00%'
+                    c.alignment = right_align
+                elif col_idx in [1, 6, 8, 15, 16, 20]:
+                    c.alignment = center_align
+                else:
+                    c.alignment = left_align
+
+                if "HIT" in ext_type and ("T1" in ext_type or "T2" in ext_type):
+                    if col_idx in [15, 18, 19]:
+                        c.fill = win_fill
+                        c.font = bold_font
+                elif "SL" in ext_type or pnl < 0:
+                    if col_idx in [15, 18, 19]:
+                        c.fill = loss_fill
+                        c.font = bold_font
+                elif "EOD" in ext_type:
+                    if col_idx in [15, 18, 19]:
+                        c.fill = neutral_fill
+
+        for col in ws1.columns:
+            max_len = max(len(str(cell.value or '')) for cell in col)
+            col_letter = get_column_letter(col[0].column)
+            ws1.column_dimensions[col_letter].width = max(max_len + 4, 12)
+
+        # -------------------------------------------------------------
+        # SHEET 2: Executive_Summary
+        # -------------------------------------------------------------
+        ws2 = wb.create_sheet(title="Executive_Summary")
+        ws2.views.sheetView[0].showGridLines = True
+
+        ws2["A1"] = "APEXTRADE PAPER LAB - EXECUTIVE PERFORMANCE AUDIT"
+        ws2["A1"].font = title_font
+        ws2.merge_cells("A1:C1")
+        ws2.row_dimensions[1].height = 26
+
+        fin = report_data.get("financial_summary", {})
+        acc = report_data.get("prediction_accuracy", {})
+        period = report_data.get("period", {})
+
+        summary_items = [
+            ("Evaluation Start Date", period.get("start", ""), "@"),
+            ("Evaluation End Date", period.get("end", ""), "@"),
+            ("Active Algorithm Config", report_data.get("config_version", "v1.0.0"), "@"),
+            ("Total Stock Recommendations", acc.get("total_picks", 0), "#,##0"),
+            ("Winning Recommendations (T1/T2)", acc.get("winning_picks", 0), "#,##0"),
+            ("Stopped Out Recommendations (SL)", acc.get("losing_picks", 0), "#,##0"),
+            ("EOD Timeouts (Closed 3:25 PM)", acc.get("eod_close_count", 0), "#,##0"),
+            ("Recommendation Win Rate (%)", (acc.get("win_rate_pct", 0.0) / 100.0), "0.0%"),
+            ("Total Capital Deployed (₹)", fin.get("total_notional_deployed_rs", 0.0), "₹#,##0.00"),
+            ("Gross Realized Profit (₹)", fin.get("total_gains_rs", 0.0), "₹#,##0.00"),
+            ("Gross Realized Loss (₹)", fin.get("total_losses_rs", 0.0), "₹#,##0.00"),
+            ("Net Realized P&L (₹)", fin.get("net_realized_pnl_rs", 0.0), "₹#,##0.00"),
+            ("Net Return on Capital (%)", (fin.get("net_return_pct", 0.0) / 100.0), "+0.00%;-0.00%;0.00%"),
+            ("Profit Factor", fin.get("profit_factor", 0.0), "0.00"),
+            ("Average Winning Trade (₹)", fin.get("avg_winner_rs", 0.0), "₹#,##0.00"),
+            ("Average Losing Trade (₹)", fin.get("avg_loser_rs", 0.0), "₹#,##0.00"),
+            ("Target 1 Hits Count", acc.get("t1_hit_count", 0), "#,##0"),
+            ("Target 2 Hits Count", acc.get("t2_hit_count", 0), "#,##0"),
+            ("Stop-Loss Hits Count", acc.get("sl_hit_count", 0), "#,##0")
+        ]
+
+        ws2.append([])
+        ws2.append(["Metric / Performance KPI", "Value", "Notes / Context"])
+        ws2.row_dimensions[3].height = 24
+        for c_idx in range(1, 4):
+            cell = ws2.cell(row=3, column=c_idx)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = center_align
+            cell.border = thin_border
+
+        for idx, (label, val, fmt) in enumerate(summary_items, 4):
+            ws2.append([label, val, ""])
+            ws2.row_dimensions[idx].height = 20
+            c1 = ws2.cell(row=idx, column=1)
+            c2 = ws2.cell(row=idx, column=2)
+            c3 = ws2.cell(row=idx, column=3)
+
+            c1.font = bold_font
+            c1.border = thin_border
+            c2.font = regular_font
+            c2.number_format = fmt
+            c2.alignment = right_align
+            c2.border = thin_border
+            c3.border = thin_border
+
+            if "Net Realized P&L" in label:
+                c2.font = bold_font
+                c2.fill = win_fill if float(fin.get("net_realized_pnl_rs", 0)) >= 0 else loss_fill
+
+        ws2.column_dimensions["A"].width = 38
+        ws2.column_dimensions["B"].width = 22
+        ws2.column_dimensions["C"].width = 25
+
+        # -------------------------------------------------------------
+        # SHEET 3: Signal_Diagnostics
+        # -------------------------------------------------------------
+        ws3 = wb.create_sheet(title="Signal_Diagnostics")
+        ws3.views.sheetView[0].showGridLines = True
+        ws3["A1"] = "SIGNAL LAG DIAGNOSTICS & SYSTEM RECOMMENDATIONS"
+        ws3["A1"].font = title_font
+        ws3.merge_cells("A1:C1")
+        ws3.row_dimensions[1].height = 26
+
+        diag = report_data.get("signal_diagnostics", {})
+        recs = report_data.get("recommendations", [])
+
+        ws3.append([])
+        ws3.append(["Diagnostic Failure Metric", "Count / Ratio", "Failure Rate (%)"])
+        for c_idx in range(1, 4):
+            cell = ws3.cell(row=3, column=c_idx)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = center_align
+            cell.border = thin_border
+
+        diag_rows = [
+            ("Total Losses Analyzed", diag.get("total_failures_analyzed", 0), "100.0%"),
+            ("RSI Overbought Exhaustion (> 65)", diag.get("rsi_fail_count", 0), f"{diag.get('rsi_fail_pct', 0.0):.1f}%"),
+            ("Weak Relative Volume Flow (< 1.00x)", diag.get("rvol_fail_count", 0), f"{diag.get('rvol_fail_pct', 0.0):.1f}%"),
+            ("Late Entry Above VWAP (> 0.40σ)", diag.get("vwap_fail_count", 0), f"{diag.get('vwap_fail_pct', 0.0):.1f}%"),
+            ("Low ADX Chop Regime (< 20)", diag.get("adx_fail_count", 0), f"{diag.get('adx_fail_pct', 0.0):.1f}%"),
+        ]
+
+        for idx, (lbl, cnt, pct) in enumerate(diag_rows, 4):
+            ws3.append([lbl, cnt, pct])
+            for c_idx in range(1, 4):
+                c = ws3.cell(row=idx, column=c_idx)
+                c.font = regular_font
+                c.border = thin_border
+                if c_idx > 1: c.alignment = center_align
+
+        rec_start = len(diag_rows) + 6
+        ws3.cell(row=rec_start, column=1, value="ACTIONABLE OPTIMIZATION RECOMMENDATIONS").font = bold_font
+        for r_idx, rec_text in enumerate(recs, rec_start + 1):
+            ws3.cell(row=r_idx, column=1, value=f"• {rec_text}").font = regular_font
+
+        ws3.column_dimensions["A"].width = 50
+        ws3.column_dimensions["B"].width = 18
+        ws3.column_dimensions["C"].width = 20
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    @classmethod
+    def export_report_to_csv_string(cls, report_data: Dict[str, Any]) -> str:
+        """
+        Exports the trade execution records into a standard CSV string.
+        """
+        import io, csv
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+
+        headers = [
+            "Date", "Symbol", "Company Name", "Quant Score", "Setup Grade",
+            "Signal Time", "Signal Price", "Entry Time", "Entry Price",
+            "Target 1", "Target 2", "Stop Loss", "Allocated Capital",
+            "Quantity", "Outcome Status", "Exit Time", "Exit Price",
+            "Realized PnL Rs", "Return Pct", "Bars Held", "Key Catalysts"
+        ]
+        writer.writerow(headers)
+
+        for r in report_data.get("records", []):
+            top_sigs = r.get("top_signals", [])
+            sig_str = ", ".join(top_sigs[:2]) if isinstance(top_sigs, list) else str(top_sigs or "")
+            writer.writerow([
+                r.get("pick_date", ""),
+                r.get("symbol", ""),
+                r.get("display_name", r.get("symbol", "")),
+                float(r.get("advisor_score", 0)),
+                r.get("setup_grade", "GRADE A"),
+                r.get("signal_time", "08:50:00"),
+                float(r.get("signal_price", 0.0)),
+                r.get("entry_time", "09:15:00"),
+                float(r.get("entry_price", 0.0)),
+                float(r.get("target_1", 0.0)),
+                float(r.get("target_2", 0.0)),
+                float(r.get("stop_loss", 0.0)),
+                float(r.get("allocated_capital", 20000.0)),
+                int(r.get("quantity", 1)),
+                r.get("exit_type", "ACTIVE"),
+                r.get("exit_time", "15:15:00"),
+                float(r.get("exit_price", 0.0)),
+                float(r.get("pnl_rs", 0.0)),
+                float(r.get("pnl_pct", 0.0)),
+                int(r.get("bars_held", 0)),
+                sig_str
+            ])
+        return buf.getvalue()
 
     @classmethod
     def list_saved_reports(cls) -> List[Dict[str, Any]]:

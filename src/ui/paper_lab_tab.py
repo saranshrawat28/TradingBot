@@ -76,12 +76,45 @@ def render_paper_lab_tab(broker_instance=None):
 
     st.markdown("<br/>", unsafe_allow_html=True)
 
-    # 2. Performance Scope Selector & KPI Cards
-    scope = st.radio("📈 Select Report & Metrics Scope:", ["📅 Today's Daily Returns (1-Day)", "📊 Rolling 7-Day Performance", "🏛️ Rolling 28-Day Benchmark"], horizontal=True)
+    # 2. Performance Scope Selector & Excel/CSV Export Buttons
+    sel_col1, sel_col2, sel_col3 = st.columns([2.5, 1.2, 1.0])
+    with sel_col1:
+        scope = st.radio("📈 Select Report & Metrics Scope:", ["📅 Today's Daily Returns (1-Day)", "📊 Rolling 7-Day Performance", "🏛️ Rolling 28-Day Benchmark"], horizontal=True)
+    
     days_lb = 1 if "1-Day" in scope else (28 if "28-Day" in scope else 7)
     scope_tag = "Today" if days_lb == 1 else f"{days_lb}d"
-
     recent_report = ReportGenerator.generate_report(days_lookback=days_lb)
+
+    # Generate in-memory Excel and CSV bytes for download
+    try:
+        excel_bytes = ReportGenerator.export_report_to_excel_bytes(recent_report)
+    except Exception:
+        excel_bytes = b""
+    try:
+        csv_str = ReportGenerator.export_report_to_csv_string(recent_report)
+    except Exception:
+        csv_str = ""
+
+    with sel_col2:
+        if excel_bytes:
+            st.download_button(
+                label=f"📥 Download Excel (.xlsx)",
+                data=excel_bytes,
+                file_name=f"ApexTrade_Report_{today_str}_{scope_tag}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+
+    with sel_col3:
+        if csv_str:
+            st.download_button(
+                label=f"📥 CSV (.csv)",
+                data=csv_str,
+                file_name=f"ApexTrade_Report_{today_str}_{scope_tag}.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+
     fin = recent_report.get("financial_summary", {})
     acc = recent_report.get("prediction_accuracy", {})
 
@@ -233,8 +266,37 @@ def render_paper_lab_tab(broker_instance=None):
 
         try:
             import json
+            from pathlib import Path
             with open(chosen_path, "r", encoding="utf-8") as f:
                 rep_json = json.load(f)
+
+            dl_c1, dl_c2 = st.columns([1, 1])
+            try:
+                hist_xlsx = ReportGenerator.export_report_to_excel_bytes(rep_json)
+                with dl_c1:
+                    st.download_button(
+                        label=f"📥 Download Report in Excel (.xlsx)",
+                        data=hist_xlsx,
+                        file_name=f"{Path(chosen_path).stem}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True
+                    )
+            except Exception:
+                pass
+
+            try:
+                hist_csv = ReportGenerator.export_report_to_csv_string(rep_json)
+                with dl_c2:
+                    st.download_button(
+                        label=f"📥 Download Report in CSV (.csv)",
+                        data=hist_csv,
+                        file_name=f"{Path(chosen_path).stem}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+            except Exception:
+                pass
+
             st.markdown(rep_json.get("markdown_text", ""))
         except Exception as e:
             st.error(f"Could not load report: {e}")
