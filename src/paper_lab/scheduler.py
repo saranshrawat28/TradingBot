@@ -118,6 +118,20 @@ def run_scheduler_loop():
             slot_915 = f"{today_str}_09:15"
             slot_1535 = f"{today_str}_15:35"
             slot_1700 = f"{today_str}_17:00"
+            slot_catchup = f"{today_str}_catchup"
+
+            # 0. Intraday Auto-Catchup Check (Handles PC sleep/wake during trading hours)
+            is_trade, _ = is_trading_day(now)
+            hm_val = now.hour * 100 + now.minute
+            if is_trade and 915 <= hm_val <= 1530 and slot_catchup not in last_executed_slots:
+                today_picks = PaperDB.get_picks_by_date(today_str)
+                if not today_picks:
+                    last_executed_slots.add(slot_catchup)
+                    print(f"[Scheduler Auto-Catchup] Missing picks detected for trading day {today_str}. Running automated catch-up...")
+                    try:
+                        DailyPicker.run_daily_picker_catchup()
+                    except Exception as e:
+                        print(f"[Scheduler Auto-Catchup Error]: {e}")
 
             # 1. 08:50 AM Job
             if hm_str == "08:50" and slot_850 not in last_executed_slots:

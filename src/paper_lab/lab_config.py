@@ -14,8 +14,8 @@ class LabConfig:
     TOTAL_DAILY_CAPITAL: float = 100000.0
 
     # Stock Selection Thresholds
-    MIN_ADVISOR_SCORE: float = 6.5
-    VALID_VERDICTS: List[str] = ["BUY", "STRONG_BUY", "BUY_ON_PULLBACK"]
+    MIN_ADVISOR_SCORE: float = 5.80
+    VALID_VERDICTS: List[str] = ["BUY", "STRONG_BUY", "BUY_ON_PULLBACK", "BUY_ON_DIP"]
 
     # Diagnostic Indicator Thresholds (used in signal failure analysis)
     MAX_ENTRY_RSI_THRESHOLD: float = 65.0      # Entries above this are flagged for RSI exhaustion

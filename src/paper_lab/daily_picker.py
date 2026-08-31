@@ -52,10 +52,10 @@ class DailyPicker:
                     return None
 
                 score = float(analysis.get("score", 0.0))
-                verdict = analysis.get("verdict", "NEUTRAL").upper()
-                action = analysis.get("action", "HOLD").upper()
-
-                if score >= LabConfig.MIN_ADVISOR_SCORE and ("BUY" in verdict or "BUY" in action):
+                verdict = str(analysis.get("verdict", "NEUTRAL")).upper()
+                action = str(analysis.get("action", "HOLD")).upper()
+                is_bullish_action = any(k in verdict for k in ["BUY", "LONG", "ACCUMULATE"]) or any(k in action for k in ["BUY", "LONG", "ACCUMULATE", "DIP"])
+                if score >= LabConfig.MIN_ADVISOR_SCORE and is_bullish_action:
                     curr_price = float(analysis.get("current_price", 0.0))
                     if curr_price <= 0:
                         return None
