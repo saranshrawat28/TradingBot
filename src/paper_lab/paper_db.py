@@ -396,3 +396,59 @@ class PaperDB:
             rows = cursor.fetchall()
             conn.close()
             return [r[0] for r in rows]
+
+    @classmethod
+    def get_portfolio_summary(cls) -> Dict[str, Any]:
+        """Calculates cumulative all-time realized metrics across all closed paper trades."""
+        cls.init_db()
+        with _db_lock:
+            conn = cls.get_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+            SELECT
+                COUNT(*) as total_trades,
+                SUM(CASE WHEN pnl_rs > 0 THEN 1 ELSE 0 END) as win_count,
+                SUM(CASE WHEN pnl_rs < 0 THEN 1 ELSE 0 END) as loss_count,
+                COALESCE(SUM(pnl_rs), 0.0) as total_realized_pnl,
+                COALESCE(SUM(CASE WHEN pnl_rs > 0 THEN pnl_rs ELSE 0 END), 0.0) as gross_profit,
+                COALESCE(SUM(CASE WHEN pnl_rs < 0 THEN ABS(pnl_rs) ELSE 0 END), 0.0) as gross_loss,
+                COALESCE(SUM(allocated_capital), 0.0) as total_allocated_capital
+            FROM paper_outcomes
+            WHERE symbol NOT LIKE 'TEST_%' AND symbol NOT LIKE 'DIAG_%'
+            """)
+            row = cursor.fetchone()
+            conn.close()
+
+            if not row or row["total_trades"] == 0:
+                return {
+                    "total_trades": 0,
+                    "win_count": 0,
+                    "loss_count": 0,
+                    "win_rate_pct": 0.0,
+                    "total_realized_pnl": 0.0,
+                    "gross_profit": 0.0,
+                    "gross_loss": 0.0,
+                    "profit_factor": 1.0,
+                    "total_allocated_capital": 0.0
+                }
+
+            total_t = row["total_trades"]
+            win_c = row["win_count"]
+            loss_c = row["loss_count"]
+            realized_pnl = float(row["total_realized_pnl"])
+            gp = float(row["gross_profit"])
+            gl = float(row["gross_loss"])
+            pf = (gp / gl) if gl > 0 else (gp if gp > 0 else 1.0)
+            wr = (win_c / total_t * 100.0) if total_t > 0 else 0.0
+
+            return {
+                "total_trades": total_t,
+                "win_count": win_c,
+                "loss_count": loss_c,
+                "win_rate_pct": round(wr, 1),
+                "total_realized_pnl": round(realized_pnl, 2),
+                "gross_profit": round(gp, 2),
+                "gross_loss": round(gl, 2),
+                "profit_factor": round(pf, 2),
+                "total_allocated_capital": float(row["total_allocated_capital"])
+            }

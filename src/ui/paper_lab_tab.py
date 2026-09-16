@@ -37,6 +37,117 @@ def render_paper_lab_tab(broker_instance=None):
     <hr style='margin: 16px 0; border-color: #334155;'/>
     """, unsafe_allow_html=True)
 
+    # 0. Virtual Paper Trading Funds & Account Wallet State
+    if "paper_funds_total" not in st.session_state:
+        st.session_state["paper_funds_total"] = LabConfig.TOTAL_DAILY_CAPITAL
+    if "paper_funds_per_pick" not in st.session_state:
+        st.session_state["paper_funds_per_pick"] = LabConfig.DAILY_CAPITAL_PER_PICK
+
+    total_paper_cap = float(st.session_state["paper_funds_total"])
+    per_pick_cap = float(st.session_state["paper_funds_per_pick"])
+
+    # Calculate portfolio funds and active MTM
+    portfolio_summary = PaperDB.get_portfolio_summary()
+    all_time_realized_pnl = float(portfolio_summary.get("total_realized_pnl", 0.0))
+    all_time_trades = portfolio_summary.get("total_trades", 0)
+    all_time_wr = portfolio_summary.get("win_rate_pct", 0.0)
+
+    today_picks = PaperDB.get_picks_by_date(today_str)
+    active_picks = [p for p in today_picks if p.get("status") == "ACTIVE"]
+    deployed_margin = sum(float(p.get("allocated_capital", per_pick_cap)) for p in active_picks)
+    available_free_cash = max(0.0, total_paper_cap - deployed_margin)
+
+    # Calculate live intraday unrealized P&L
+    live_unrealized_pnl = 0.0
+    for p in active_picks:
+        sym = p["symbol"]
+        ep = float(p.get("entry_price") or p.get("signal_price", 100.0))
+        qty = int(p.get("quantity", 1))
+        q = get_live_quote(sym)
+        curr_p = float(q.get("price", ep)) if q.get("price") else ep
+        live_unrealized_pnl += (curr_p - ep) * qty
+
+    total_equity_nav = total_paper_cap + all_time_realized_pnl + live_unrealized_pnl
+    total_roi_pct = ((total_equity_nav - total_paper_cap) / total_paper_cap * 100.0) if total_paper_cap > 0 else 0.0
+
+    # 💼 Paper Trading Funds & Margin Wallet Card
+    st.markdown(f"""
+    <div style='background: linear-gradient(135deg, #0b132b 0%, #1c2541 50%, #1e1b4b 100%); border: 1.5px solid #3b82f6; border-radius: 12px; padding: 16px 20px; margin-bottom: 16px;'>
+        <div style='display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; margin-bottom: 12px;'>
+            <div style='display: flex; align-items: center; gap: 10px;'>
+                <span style='font-size: 1.25rem;'>💼</span>
+                <div>
+                    <span style='font-size: 1.05rem; font-weight: 800; color: #f8fafc;'>ApexTrade Virtual Paper Account & Capital Wallet</span>
+                    <span style='margin-left: 10px; font-size: 0.75rem; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 2px 8px; border-radius: 6px; font-weight: 700;'>ZERO REAL RISK</span>
+                </div>
+            </div>
+            <div style='color: #94a3b8; font-size: 0.80rem;'>
+                Allocated Capital: <b>₹{per_pick_cap:,.0f} / Trade</b> (Max 5 Daily Picks)
+            </div>
+        </div>
+        <div style='display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px;'>
+            <div style='background: rgba(15, 23, 42, 0.6); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);'>
+                <div style='color: #94a3b8; font-size: 0.75rem; font-weight: 600; text-transform: uppercase;'>Virtual Equity (NAV)</div>
+                <div style='color: #38bdf8; font-size: 1.25rem; font-weight: 800; margin-top: 2px;'>₹{total_equity_nav:,.2f}</div>
+                <div style='color: {'#10b981' if total_roi_pct >= 0 else '#ef4444'}; font-size: 0.75rem; font-weight: 600;'>{total_roi_pct:+.2f}% All-Time ROI</div>
+            </div>
+            <div style='background: rgba(15, 23, 42, 0.6); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);'>
+                <div style='color: #94a3b8; font-size: 0.75rem; font-weight: 600; text-transform: uppercase;'>Available Free Cash</div>
+                <div style='color: #f8fafc; font-size: 1.25rem; font-weight: 800; margin-top: 2px;'>₹{available_free_cash:,.2f}</div>
+                <div style='color: #94a3b8; font-size: 0.75rem;'>Ready for Orders</div>
+            </div>
+            <div style='background: rgba(15, 23, 42, 0.6); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);'>
+                <div style='color: #94a3b8; font-size: 0.75rem; font-weight: 600; text-transform: uppercase;'>Active Deployed Margin</div>
+                <div style='color: #fbbf24; font-size: 1.25rem; font-weight: 800; margin-top: 2px;'>₹{deployed_margin:,.2f}</div>
+                <div style='color: #94a3b8; font-size: 0.75rem;'>{len(active_picks)} Active Positions</div>
+            </div>
+            <div style='background: rgba(15, 23, 42, 0.6); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);'>
+                <div style='color: #94a3b8; font-size: 0.75rem; font-weight: 600; text-transform: uppercase;'>Realized P&L</div>
+                <div style='color: {'#10b981' if all_time_realized_pnl >= 0 else '#ef4444'}; font-size: 1.25rem; font-weight: 800; margin-top: 2px;'>{'+' if all_time_realized_pnl > 0 else ''}₹{all_time_realized_pnl:,.2f}</div>
+                <div style='color: #94a3b8; font-size: 0.75rem;'>{all_time_trades} Closed ({all_time_wr:.1f}% WR)</div>
+            </div>
+            <div style='background: rgba(15, 23, 42, 0.6); padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05);'>
+                <div style='color: #94a3b8; font-size: 0.75rem; font-weight: 600; text-transform: uppercase;'>Live Intraday P&L (MTM)</div>
+                <div style='color: {'#10b981' if live_unrealized_pnl >= 0 else '#ef4444'}; font-size: 1.25rem; font-weight: 800; margin-top: 2px;'>{'+' if live_unrealized_pnl >= 0 else ''}₹{live_unrealized_pnl:,.2f}</div>
+                <div style='color: #38bdf8; font-size: 0.75rem;'>⚡ Real-time Ticks</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Wallet Funds Customization Expander
+    with st.expander("⚙️ Manage Virtual Paper Funds & Capital Settings"):
+        f_col1, f_col2, f_col3 = st.columns([2, 2, 1.5])
+        with f_col1:
+            new_total = st.selectbox(
+                "Starting Virtual Paper Balance:",
+                [50000.0, 100000.0, 200000.0, 500000.0, 1000000.0],
+                index=[50000.0, 100000.0, 200000.0, 500000.0, 1000000.0].index(total_paper_cap) if total_paper_cap in [50000.0, 100000.0, 200000.0, 500000.0, 1000000.0] else 1,
+                format_func=lambda x: f"₹{x:,.0f}"
+            )
+            if new_total != total_paper_cap:
+                st.session_state["paper_funds_total"] = new_total
+                st.rerun()
+
+        with f_col2:
+            new_per_pick = st.selectbox(
+                "Capital Allocation Per Stock Pick:",
+                [10000.0, 20000.0, 50000.0, 100000.0],
+                index=[10000.0, 20000.0, 50000.0, 100000.0].index(per_pick_cap) if per_pick_cap in [10000.0, 20000.0, 50000.0, 100000.0] else 1,
+                format_func=lambda x: f"₹{x:,.0f} / stock"
+            )
+            if new_per_pick != per_pick_cap:
+                st.session_state["paper_funds_per_pick"] = new_per_pick
+                st.rerun()
+
+        with f_col3:
+            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("🔄 Reset Paper Balance", use_container_width=True):
+                st.session_state["paper_funds_total"] = 100000.0
+                st.session_state["paper_funds_per_pick"] = 20000.0
+                st.success("Paper funds reset to ₹1,00,000 baseline!")
+                st.rerun()
+
     # 1. Action Buttons Control Bar
     btn_col1, btn_col2, btn_col3, btn_col4, btn_col5 = st.columns([1.4, 1.6, 1.6, 1.6, 1.8])
     with btn_col1:
@@ -145,14 +256,17 @@ def render_paper_lab_tab(broker_instance=None):
     st.markdown(f"### 📋 Today's Recommendations & Live Execution Board (`{today_str}`)")
 
     today_picks = PaperDB.get_picks_by_date(today_str)
+    day_name = now.strftime("%A")
     if not today_picks:
+        is_live_hour = (now.hour == 9 and now.minute >= 15) or (10 <= now.hour < 15) or (now.hour == 15 and now.minute <= 30)
+        session_text = f"Live {day_name} Market Session" if is_live_hour else f"Upcoming {day_name} Market Session"
         st.markdown(f"""
         <div style='background: #0f172a; border: 1.5px solid #1e293b; border-left: 4px solid #38bdf8; border-radius: 10px; padding: 18px 22px; margin: 10px 0;'>
             <div style='display: flex; justify-content: space-between; align-items: center;'>
                 <div>
-                    <div style='font-size: 1.05rem; font-weight: 800; color: #f8fafc;'>🚀 Armed & Ready for Monday Market Session (08:50 AM IST)</div>
+                    <div style='font-size: 1.05rem; font-weight: 800; color: #f8fafc;'>🚀 Armed & Ready for {session_text} (08:50 AM IST)</div>
                     <div style='color: #94a3b8; font-size: 0.85rem; margin-top: 4px;'>
-                        The 24/7 background scheduler is active. It will automatically scan 200+ Indian stocks at 08:50 AM, fill 5 paper trades at 09:15 AM with ₹1,00,000 dummy capital, and evaluate results at 03:35 PM.
+                        The 24/7 background scheduler is active. It scans 200+ Indian stocks at 08:50 AM, fills 5 paper trades at 09:15 AM with ₹{total_paper_cap:,.0f} virtual capital (₹{per_pick_cap:,.0f} / trade), and evaluates results at 03:35 PM. Click <b>⚡ Run Daily Fills</b> to generate on demand.
                     </div>
                 </div>
                 <span style='background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 0.80rem;'>🟢 SCHEDULER ACTIVE</span>
